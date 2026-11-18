@@ -31,7 +31,7 @@ class MainActivity : Activity() {
 
         output = TextView(this).apply {
             textSize = 14f
-            textIsSelectable = true
+            setTextIsSelectable(true)
             text = "RoutineBridge 0.1.0\n\nНажми «Проверить систему»."
         }
 
