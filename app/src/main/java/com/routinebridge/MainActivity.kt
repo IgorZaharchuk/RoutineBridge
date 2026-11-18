@@ -81,7 +81,7 @@ class MainActivity : Activity() {
 
         shortcutNameInput = EditText(this).apply {
             hint = "Название активности"
-            singleLine = true
+            setSingleLine(true)
             filters = arrayOf(android.text.InputFilter.LengthFilter(25))
         }
 
