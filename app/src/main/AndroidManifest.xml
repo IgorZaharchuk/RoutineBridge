@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="com.samsung.android.app.routines.permission.READ_MODE_INFO" />
+    <uses-permission android:name="com.samsung.android.app.routines.permission.READ_ROUTINE_INFO" />
 
     <queries>
         <package android:name="com.samsung.android.app.routines" />

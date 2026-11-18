@@ -23,6 +23,7 @@ class MainActivity : Activity() {
     private var lastReport = ""
     private lateinit var shortcutNameInput: EditText
     private lateinit var shortcutStatus: TextView
+    private lateinit var routinesOutput: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,10 +97,31 @@ class MainActivity : Activity() {
             setPadding(0, 8, 0, 16)
         }
 
+        val routinesHeader = TextView(this).apply {
+            text = "РУЧНЫЕ СЦЕНАРИИ SAMSUNG"
+            textSize = 16f
+            setPadding(0, 16, 0, 4)
+        }
+
+        val loadRoutinesButton = Button(this).apply {
+            text = "Загрузить ручные сценарии"
+            setOnClickListener { loadManualRoutines() }
+        }
+
+        routinesOutput = TextView(this).apply {
+            textSize = 14f
+            setTextIsSelectable(true)
+            text = "Список ещё не загружен."
+            setPadding(0, 4, 0, 12)
+        }
+
         root.addView(shortcutHeader)
         root.addView(shortcutNameInput)
         root.addView(createShortcutButton)
         root.addView(shortcutStatus)
+        root.addView(routinesHeader)
+        root.addView(loadRoutinesButton)
+        root.addView(routinesOutput)
         root.addView(scroll)
         root.addView(actions)
         root.addView(checkButton)
@@ -172,6 +194,52 @@ class MainActivity : Activity() {
 
         shortcutStatus.text =
             "ЯРЛЫК СРАБОТАЛ!\nНазвание: $name\nВремя: $time"
+    }
+
+    private fun loadManualRoutines() {
+        routinesOutput.text = "Загрузка списка..."
+        try {
+            val uri = Uri.parse("content://$authority/routine_list").buildUpon()
+                .appendQueryParameter("routine_type", "normal")
+                .appendQueryParameter("condition_type", "manual")
+                .build()
+
+            val cursor = contentResolver.query(uri, null, null, null, null)
+                ?: throw IllegalStateException("Samsung Provider вернул пустой Cursor")
+
+            cursor.use {
+                val uuidColumn = it.getColumnIndexOrThrow("uuid")
+                val nameColumn = it.getColumnIndexOrThrow("name")
+                val runningColumn = it.getColumnIndexOrThrow("is_running")
+                val enabledColumn = it.getColumnIndexOrThrow("is_enabled")
+
+                val lines = mutableListOf<String>()
+                while (it.moveToNext()) {
+                    val uuid = it.getString(uuidColumn)
+                    val name = it.getString(nameColumn) ?: "Без названия"
+                    val running = it.getInt(runningColumn) == 1
+                    val enabled = it.getInt(enabledColumn) == 1
+                    val state = if (running) "ВКЛЮЧЁН" else "выключен"
+                    val availability = if (enabled) "" else " (отключён в Samsung)"
+                    lines += "• $name — $state$availability\n  UUID: $uuid"
+                }
+
+                routinesOutput.text = if (lines.isEmpty()) {
+                    "Ручные сценарии не найдены."
+                } else {
+                    "Найдено ручных сценариев: ${lines.size}\n\n" +
+                        lines.joinToString("\n\n")
+                }
+            }
+        } catch (e: SecurityException) {
+            routinesOutput.text =
+                "Samsung Provider запретил чтение списка.\n" +
+                "${e.javaClass.simpleName}: ${e.message}"
+        } catch (e: Exception) {
+            routinesOutput.text =
+                "Не удалось прочитать ручные сценарии.\n" +
+                "${e.javaClass.simpleName}: ${e.message}"
+        }
     }
 
     private fun copyReport() {
