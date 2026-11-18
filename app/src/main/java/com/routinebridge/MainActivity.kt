@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -20,6 +21,8 @@ class MainActivity : Activity() {
 
     private lateinit var output: TextView
     private var lastReport = ""
+    private lateinit var shortcutNameInput: EditText
+    private lateinit var shortcutStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,11 +74,104 @@ class MainActivity : Activity() {
             }
         }
 
+        val shortcutHeader = TextView(this).apply {
+            text = "ТЕСТ ДИНАМИЧЕСКОГО ЯРЛЫКА"
+            textSize = 16f
+        }
+
+        shortcutNameInput = EditText(this).apply {
+            hint = "Название активности"
+            singleLine = true
+            filters = arrayOf(android.text.InputFilter.LengthFilter(25))
+        }
+
+        val createShortcutButton = Button(this).apply {
+            text = "Создать / обновить ярлык"
+            setOnClickListener { createTestShortcut() }
+        }
+
+        shortcutStatus = TextView(this).apply {
+            textSize = 14f
+            text = "Ярлык ещё не создан и не запускался."
+            setPadding(0, 8, 0, 16)
+        }
+
+        root.addView(shortcutHeader)
+        root.addView(shortcutNameInput)
+        root.addView(createShortcutButton)
+        root.addView(shortcutStatus)
         root.addView(scroll)
         root.addView(actions)
         root.addView(checkButton)
 
         setContentView(root)
+        handleShortcutIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShortcutIntent(intent)
+    }
+
+    private fun createTestShortcut() {
+        val name = shortcutNameInput.text.toString().trim()
+        if (name.isEmpty()) {
+            shortcutStatus.text = "Сначала введи название ярлыка."
+            return
+        }
+
+        try {
+            val manager = getSystemService(
+                android.content.pm.ShortcutManager::class.java
+            )
+
+            val shortcutIntent = Intent(this, MainActivity::class.java).apply {
+                action = ACTION_TEST_SHORTCUT
+                putExtra(EXTRA_SHORTCUT_NAME, name)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+
+            val shortcut = android.content.pm.ShortcutInfo.Builder(
+                this,
+                SHORTCUT_ID
+            )
+                .setShortLabel(name)
+                .setLongLabel(name)
+                .setIcon(
+                    android.graphics.drawable.Icon.createWithResource(
+                        this,
+                        android.R.drawable.ic_menu_view
+                    )
+                )
+                .setIntent(shortcutIntent)
+                .build()
+
+            val added = manager.addDynamicShortcuts(listOf(shortcut))
+
+            shortcutStatus.text = if (added) {
+                "Ярлык опубликован: «$name».\n" +
+                    "Теперь проверь, виден ли он в Samsung Routines."
+            } else {
+                "Android не подтвердил публикацию ярлыка."
+            }
+        } catch (e: Exception) {
+            shortcutStatus.text =
+                "Ошибка создания ярлыка: ${e.javaClass.simpleName}\n${e.message}"
+        }
+    }
+
+    private fun handleShortcutIntent(intent: Intent?) {
+        if (intent?.action != ACTION_TEST_SHORTCUT) return
+
+        val name = intent.getStringExtra(EXTRA_SHORTCUT_NAME) ?: "Без названия"
+        val time = java.text.SimpleDateFormat(
+            "HH:mm:ss",
+            java.util.Locale.getDefault()
+        ).format(java.util.Date())
+
+        shortcutStatus.text =
+            "ЯРЛЫК СРАБОТАЛ!\nНазвание: $name\nВремя: $time"
     }
 
     private fun copyReport() {
@@ -119,6 +215,13 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "Ошибка сохранения: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    companion object {
+        private const val SHORTCUT_ID = "routinebridge_test_entry"
+        private const val ACTION_TEST_SHORTCUT =
+            "com.routinebridge.action.TEST_SHORTCUT"
+        private const val EXTRA_SHORTCUT_NAME = "shortcut_name"
     }
 
     private fun diagnose(): String {
