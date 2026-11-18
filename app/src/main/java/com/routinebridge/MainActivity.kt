@@ -180,6 +180,37 @@ class MainActivity : Activity() {
                 PackageManager.PERMISSION_GRANTED
             result.appendLine("READ_ROUTINE_INFO granted=$granted")
 
+            val modeInfoPermission =
+                "com.samsung.android.app.routines.permission.READ_MODE_INFO"
+            val modeInfoGranted = checkSelfPermission(modeInfoPermission) ==
+                PackageManager.PERMISSION_GRANTED
+
+            result.appendLine("READ_MODE_INFO granted=$modeInfoGranted")
+
+            result.appendLine()
+            result.appendLine("ПРЯМОЙ ВЫЗОВ MODE INFO PROVIDER:")
+
+            try {
+                val modeInfoUri = Uri.parse(
+                    "content://com.samsung.android.app.routines.modeinfoprovider"
+                )
+                val response = contentResolver.call(
+                    modeInfoUri,
+                    "get_mode_list",
+                    null,
+                    Bundle()
+                )
+
+                result.appendLine("Вызов выполнен")
+                result.appendLine("Ответ: ${response ?: "null"}")
+            } catch (e: SecurityException) {
+                result.appendLine("ДОСТУП ЗАПРЕЩЁН: SecurityException")
+                result.appendLine(e.message ?: "")
+            } catch (e: Exception) {
+                result.appendLine("ОШИБКА ВЫЗОВА: ${e.javaClass.simpleName}")
+                result.appendLine(e.message ?: "")
+            }
+
             result.appendLine()
             result.appendLine("Provider authority:")
             result.appendLine(authority)
