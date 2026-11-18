@@ -1,44 +1,124 @@
 package com.routinebridge
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 
 class MainActivity : Activity() {
 
     private val routinesPackage = "com.samsung.android.app.routines"
     private val authority = "com.samsung.android.app.routines.externalprovider"
 
+    private lateinit var output: TextView
+    private var lastReport = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val content = LinearLayout(this).apply {
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
+            setPadding(24, 24, 24, 24)
         }
 
-        val output = TextView(this).apply {
+        output = TextView(this).apply {
             textSize = 14f
+            textIsSelectable = true
             text = "RoutineBridge 0.1.0\n\nНажми «Проверить систему»."
         }
 
-        val button = Button(this).apply {
+        val scroll = ScrollView(this).apply {
+            addView(output)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        }
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        val copyButton = Button(this).apply {
+            text = "Копировать"
+            setOnClickListener { copyReport() }
+        }
+
+        val saveButton = Button(this).apply {
+            text = "Сохранить в файл"
+            setOnClickListener { saveReport() }
+        }
+
+        actions.addView(copyButton, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        actions.addView(saveButton, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+
+        val checkButton = Button(this).apply {
             text = "Проверить систему"
             setOnClickListener {
-                output.text = diagnose()
+                lastReport = diagnose()
+                output.text = lastReport
             }
         }
 
-        content.addView(button)
-        content.addView(output)
+        root.addView(scroll)
+        root.addView(actions)
+        root.addView(checkButton)
 
-        setContentView(ScrollView(this).apply {
-            addView(content)
-        })
+        setContentView(root)
+    }
+
+    private fun copyReport() {
+        if (lastReport.isEmpty()) {
+            Toast.makeText(this, "Сначала запусти проверку", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("RoutineBridge report", lastReport))
+        Toast.makeText(this, "Отчёт скопирован", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun saveReport() {
+        if (lastReport.isEmpty()) {
+            Toast.makeText(this, "Сначала запусти проверку", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TITLE, "RoutineBridge-report.txt")
+        }
+
+        startActivityForResult(intent, 1001)
+    }
+
+    @Deprecated("Deprecated in Android API")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == 1001 && resultCode == RESULT_OK) {
+            val uri: Uri = data?.data ?: return
+            try {
+                contentResolver.openOutputStream(uri)?.use {
+                    it.write(lastReport.toByteArray(Charsets.UTF_8))
+                }
+                Toast.makeText(this, "Отчёт сохранён", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Ошибка сохранения: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun diagnose(): String {
@@ -94,14 +174,11 @@ class MainActivity : Activity() {
 
             result.appendLine()
             result.appendLine("ПРОВЕРКА ДОСТУПА:")
-            try {
-                val permission = "com.samsung.android.app.routines.permission.READ_ROUTINE_INFO"
-                val granted = checkSelfPermission(permission) ==
-                    PackageManager.PERMISSION_GRANTED
-                result.appendLine("READ_ROUTINE_INFO granted=$granted")
-            } catch (e: Exception) {
-                result.appendLine("Ошибка: ${e.message}")
-            }
+            val permission =
+                "com.samsung.android.app.routines.permission.READ_ROUTINE_INFO"
+            val granted = checkSelfPermission(permission) ==
+                PackageManager.PERMISSION_GRANTED
+            result.appendLine("READ_ROUTINE_INFO granted=$granted")
 
             result.appendLine()
             result.appendLine("Provider authority:")
