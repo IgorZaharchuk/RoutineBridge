@@ -2,22 +2,40 @@ package com.routinebridge
 
 import android.util.Log
 
-import java.util.concurrent.TimeUnit
-
 class RoutineActionExecutor(
-    private val repository: ManualRoutineRepository = ManualRoutineRepository()
+    private val repository: ManualRoutineRepository = ManualRoutineRepository(),
+    private val english: Boolean = false
 ) {
     fun execute(input: RoutineInput, requestId: String): String {
-        Log.i(LOG_TAG, "EXEC_START request=$requestId input=${input.id} action=${input.action} uuid=${input.routineUuid}")
-        val routine = repository.load().firstOrNull { it.uuid == input.routineUuid }
-            ?: throw IllegalStateException("Сценарий «${input.routineName}» не найден")
+        Log.i(
+            LOG_TAG,
+            "EXEC_START request=$requestId input=${input.id} action=${input.action} uuid=${input.routineUuid}"
+        )
+
+        val routine = repository.load().firstOrNull {
+            it.uuid == input.routineUuid
+        } ?: throw IllegalStateException(
+            message(
+                "Сценарий «${input.routineName}» не найден",
+                "Routine “${input.routineName}” not found"
+            )
+        )
 
         if (routine.isEnabled == false) {
-            throw IllegalStateException("Сценарий «${routine.name}» отключён в Samsung")
+            throw IllegalStateException(
+                message(
+                    "Сценарий «${routine.name}» отключён в Samsung",
+                    "Routine “${routine.name}” is disabled in Samsung"
+                )
+            )
         }
 
-        val current = routine.isRunning
-            ?: throw IllegalStateException("Не удалось определить состояние сценария")
+        val current = routine.isRunning ?: throw IllegalStateException(
+            message(
+                "Не удалось определить состояние сценария",
+                "Could not determine routine state"
+            )
+        )
 
         val target = when (input.action) {
             RoutineInputAction.ENABLE -> true
@@ -26,7 +44,11 @@ class RoutineActionExecutor(
         }
 
         if (current == target) {
-            return "Сценарий «${routine.name}» уже ${if (target) "включён" else "выключен"}"
+            return if (english) {
+                "Routine “${routine.name}” is already ${if (target) "enabled" else "disabled"}"
+            } else {
+                "Сценарий «${routine.name}» уже ${if (target) "включён" else "выключен"}"
+            }
         }
 
         val command = "am start -W -n " +
@@ -37,47 +59,53 @@ class RoutineActionExecutor(
         Log.i(LOG_TAG, "SAMSUNG_LAUNCH request=$requestId")
         val output = runRoot(command)
         Log.i(LOG_TAG, "SAMSUNG_RETURN request=$requestId output=${output.take(500)}")
-        if (output.contains("Error:", true) || output.contains("Exception", true)) {
-            throw IllegalStateException("Samsung вернул ошибку:\n$output")
-        }
 
-        Thread.sleep(900)
-        val updated = repository.load().firstOrNull { it.uuid == routine.uuid }
-        Log.i(LOG_TAG, "STATE_AFTER request=$requestId expected=$target actual=${updated?.isRunning}")
-        if (updated?.isRunning != target) {
+        if (output.contains("Error:", true) || output.contains("Exception", true)) {
             throw IllegalStateException(
-                "Новое состояние сценария не подтверждено. Ответ: $output"
+                message(
+                    "Samsung вернул ошибку:\n$output",
+                    "Samsung returned an error:\n$output"
+                )
             )
         }
 
-        return "Сценарий «${routine.name}»: ${if (target) "включён" else "выключен"}"
+        Thread.sleep(900)
+
+        val updated = repository.load().firstOrNull {
+            it.uuid == routine.uuid
+        }
+
+        Log.i(
+            LOG_TAG,
+            "STATE_AFTER request=$requestId expected=$target actual=${updated?.isRunning}"
+        )
+
+        if (updated?.isRunning != target) {
+            throw IllegalStateException(
+                message(
+                    "Новое состояние сценария не подтверждено. Ответ: $output",
+                    "The new routine state was not confirmed. Response: $output"
+                )
+            )
+        }
+
+        return if (english) {
+            "Routine “${routine.name}”: ${if (target) "enabled" else "disabled"}"
+        } else {
+            "Сценарий «${routine.name}»: ${if (target) "включён" else "выключен"}"
+        }
     }
 
-    private fun runRoot(command: String): String {
-        val process = ProcessBuilder("su", "-c", command)
-            .redirectErrorStream(true).start()
-        val output = StringBuilder()
-        val reader = Thread {
-            process.inputStream.bufferedReader().useLines {
-                output.append(it.joinToString("\n"))
-            }
-        }
-        reader.start()
-        if (!process.waitFor(15, TimeUnit.SECONDS)) {
-            process.destroyForcibly()
-            reader.join(500)
-            throw IllegalStateException("Превышено время ожидания Root-команды")
-        }
-        reader.join(1000)
-        if (process.exitValue() != 0) {
-            throw IllegalStateException("Root завершился с кодом ${process.exitValue()}:\n$output")
-        }
-        return output.toString()
-    }
+    private fun message(ru: String, en: String): String =
+        if (english) en else ru
+
+    private fun runRoot(command: String): String =
+        RootCommand.execute(command, 15)
+
+    private fun quote(value: String) =
+        "'" + value.replace("'", "'\\''") + "'"
 
     private companion object {
         const val LOG_TAG = "RoutineBridge"
     }
-
-    private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 }

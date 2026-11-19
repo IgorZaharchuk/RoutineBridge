@@ -31,6 +31,39 @@ class MainActivity : Activity() {
     private lateinit var addButton: Button
     private lateinit var inputContainer: LinearLayout
     private var busy = false
+    private var english = false
+    private val preferences by lazy {
+        getSharedPreferences("settings", MODE_PRIVATE)
+    }
+
+    private fun tr(ru: String, en: String) = if (english) en else ru
+
+    private fun actionTitle(action: RoutineInputAction) = when (action) {
+        RoutineInputAction.ENABLE -> tr("Включить", "Enable")
+        RoutineInputAction.DISABLE -> tr("Выключить", "Disable")
+        RoutineInputAction.TOGGLE -> tr("Переключить", "Toggle")
+    }
+
+    private fun setStatus(value: String) {
+        status.text = value
+        status.setTextColor(when {
+            value.contains("ошибка", true) ||
+            value.contains("не удалось", true) ||
+            value.contains("недоступен", true) ||
+            value.contains("failed", true) ||
+            value.contains("unavailable", true) -> Color.rgb(235, 130, 130)
+            value.contains("найдено", true) ||
+            value.contains("сохранены", true) ||
+            value.contains("успешно", true) ||
+            value.contains("found", true) ||
+            value.contains("saved", true) -> Color.rgb(120, 200, 140)
+            value.contains("загрузка", true) ||
+            value.contains("выполняю", true) ||
+            value.contains("loading", true) ||
+            value.contains("running", true) -> blue
+            else -> secondary
+        })
+    }
     private var editingInputId: String? = null
     private val collapsedGroups = mutableSetOf<Long>()
 
@@ -53,6 +86,7 @@ class MainActivity : Activity() {
         window.decorView.systemUiVisibility = 0
 
         inputs = store.load()
+        english = preferences.getBoolean("english", false)
         buildScreen()
         handleShortcutIntent(intent)
         refreshRoutines(false)
@@ -96,17 +130,25 @@ class MainActivity : Activity() {
 
         val title = text("RoutineBridge", 20f, white, true)
         content.addView(title)
-        content.addView(text("Связь с ручными сценариями Samsung", 14f, secondary)
+        content.addView(text(tr("Связь с ручными сценариями Samsung", "Samsung manual routines"), 14f, secondary)
             .also { it.setPadding(0, dp(4), 0, dp(8)) })
+        content.addView(button(if (english) "Русский" else "English") {
+            english = !english
+            preferences.edit().putBoolean("english", english).apply()
+            buildScreen()
+            refreshRoutines(false)
+        }, matchWrap().apply { bottomMargin = dp(8) })
 
-        status = text("Загружаю сценарии Samsung…", 13f, secondary)
-        content.addView(status)
+        status = text(tr("Загружаю сценарии Samsung…", "Loading Samsung routines…"), 13f, blue)
+        status.setPadding(dp(12), dp(12), dp(12), dp(12))
+        status.background = rounded(variant, 10)
+        content.addView(status, matchWrap().apply { bottomMargin = dp(10) })
 
-        addButton = button("＋  Добавить вход") { openEditor(null) }
+        addButton = button(tr("＋  Добавить вход", "＋  Add input")) { openEditor(null) }
         content.addView(addButton, matchWrap().apply { bottomMargin = dp(8) })
-        content.addView(button("Обновить список сценариев") { refreshRoutines(true) }, matchWrap().apply { bottomMargin = dp(8) })
+        content.addView(button(tr("Обновить список сценариев", "Refresh routines")) { refreshRoutines(true) }, matchWrap().apply { bottomMargin = dp(8) })
 
-        content.addView(text("Мои входы", 19f, white, true)
+        content.addView(text(tr("Мои входы", "My inputs"), 19f, white, true)
             .also { it.setPadding(0, dp(8), 0, dp(10)) })
         inputContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -114,10 +156,16 @@ class MainActivity : Activity() {
         content.addView(inputContainer, matchWrap())
 
         val appVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: "—"
-        content.addView(
-            text("github.com/IgorZaharchuk/RoutineBridge\nВерсия $appVersion", 12f, secondary)
-                .also { it.setPadding(0, dp(24), 0, dp(8)) }
-        )
+        val github = text("github.com/IgorZaharchuk/RoutineBridge", 12f, blue).apply {
+            setPadding(0, dp(24), 0, dp(4))
+            isClickable = true
+            setOnClickListener {
+                startActivity(Intent(Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://github.com/IgorZaharchuk/RoutineBridge")))
+            }
+        }
+        content.addView(github)
+        content.addView(text("${tr("Версия", "Version")} $appVersion", 12f, secondary))
         renderInputs()
         setContentView(root)
         root.requestApplyInsets()
@@ -128,7 +176,7 @@ class MainActivity : Activity() {
 
         if (inputs.isEmpty()) {
             inputContainer.addView(text(
-                "Пока нет входов.\nДобавь вход, выбери ручной сценарий Samsung и действие.",
+                tr("Пока нет входов.\nДобавь вход, выбери ручной сценарий Samsung и действие.", "No inputs yet.\nAdd an input, choose a Samsung manual routine and an action."),
                 14f, secondary
             ).apply {
                 setPadding(dp(14), dp(18), dp(14), dp(18))
@@ -141,7 +189,7 @@ class MainActivity : Activity() {
         val allCollapsed = groups.keys.all { it in collapsedGroups }
 
         inputContainer.addView(
-            button(if (allCollapsed) "Развернуть все" else "Свернуть все") {
+            button(if (allCollapsed) tr("Развернуть все", "Expand all") else tr("Свернуть все", "Collapse all")) {
                 if (allCollapsed) collapsedGroups.clear()
                 else collapsedGroups.addAll(groups.keys)
                 renderInputs()
@@ -172,7 +220,7 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams(0, -2, 1f)
             )
             header.addView(
-                text("${group.size} вход(ов)", 12f, secondary)
+                text(if (english) "${group.size} input(s)" else "${group.size} вход(ов)", 12f, secondary)
             )
 
             header.setOnClickListener {
@@ -206,7 +254,7 @@ class MainActivity : Activity() {
                     val pencil = text("✎", 23f, blue, true).apply {
                         gravity = android.view.Gravity.CENTER
                         setPadding(dp(14), dp(4), dp(4), dp(4))
-                        contentDescription = "Редактировать вход"
+                        contentDescription = tr("Редактировать вход", "Edit input")
                         isClickable = true
                         isFocusable = true
                         setOnClickListener {
@@ -240,7 +288,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(14), 0, dp(4))
         }
 
-        form.addView(text("Название входа", 13f, secondary))
+        form.addView(text(tr("Название входа", "Input name"), 13f, secondary))
         val name = EditText(this).apply {
             setSingleLine(true)
             setText(input.label)
@@ -255,7 +303,7 @@ class MainActivity : Activity() {
         }
 
         form.addView(
-            text("Ручной сценарий Samsung", 13f, secondary)
+            text(tr("Ручной сценарий Samsung", "Samsung manual routine"), 13f, secondary)
                 .also { it.setPadding(0, dp(10), 0, 0) }
         )
         val routineSpinner = Spinner(this)
@@ -267,12 +315,12 @@ class MainActivity : Activity() {
         form.addView(routineSpinner, matchWrap())
 
         form.addView(
-            text("Действие", 13f, secondary)
+            text(tr("Действие", "Action"), 13f, secondary)
                 .also { it.setPadding(0, dp(10), 0, 0) }
         )
         val actionValues = RoutineInputAction.entries
         val actionSpinner = Spinner(this)
-        actionSpinner.adapter = themedSpinnerAdapter(actionValues.map { it.title })
+        actionSpinner.adapter = themedSpinnerAdapter(actionValues.map { actionTitle(it) })
         prepareSpinner(actionSpinner)
         actionSpinner.setSelection(actionValues.indexOf(input.action).coerceAtLeast(0))
         form.addView(actionSpinner, matchWrap())
@@ -282,14 +330,14 @@ class MainActivity : Activity() {
             gravity = android.view.Gravity.CENTER_VERTICAL
         }
 
-        buttons.addView(dialogButton("Удалить") {
+        buttons.addView(dialogButton(tr("Удалить", "Delete")) {
             confirmDelete(input)
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
             leftMargin = dp(4)
             rightMargin = dp(4)
         })
 
-        buttons.addView(dialogButton("Отмена") {
+        buttons.addView(dialogButton(tr("Отмена", "Cancel")) {
             editingInputId = null
             renderInputs()
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
@@ -297,10 +345,10 @@ class MainActivity : Activity() {
             rightMargin = dp(4)
         })
 
-        buttons.addView(dialogButton("Сохранить") {
+        buttons.addView(dialogButton(tr("Сохранить", "Save")) {
             val label = name.text.toString().trim()
             if (label.isEmpty()) {
-                name.error = "Введи название"
+                name.error = tr("Введи название", "Enter a name")
                 return@dialogButton
             }
 
@@ -324,18 +372,23 @@ class MainActivity : Activity() {
     }
 
     private fun refreshRoutines(showMessage: Boolean) {
-        status.text = "Загрузка ручных сценариев через Root…"
+        setStatus(tr("Загрузка ручных сценариев через Root…", "Loading routines through Root…"))
         Thread {
             try {
                 val loaded = repository.load()
                 runOnUiThread {
                     routines = loaded
-                    status.text = "Найдено ручных сценариев: ${loaded.size}"
+                    setStatus(tr("Найдено ручных сценариев: ${loaded.size}", "Manual routines found: ${loaded.size}"))
                     if (showMessage) renderInputs()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    status.text = "Ошибка загрузки: ${e.message}"
+                    setStatus(
+                        if (e is RootAccessException)
+                            tr("Root-доступ недоступен.", "Root access unavailable.")
+                        else
+                            tr("Ошибка загрузки: ${e.message}", "Loading error: ${e.message}")
+                    )
                 }
             }
         }.start()
@@ -344,9 +397,9 @@ class MainActivity : Activity() {
     private fun openEditor(existing: RoutineInput?) {
         if (routines.isEmpty()) {
             AlertDialog.Builder(this)
-                .setMessage("Сначала дождись загрузки ручных сценариев Samsung.")
-                .setPositiveButton("Обновить") { _, _ -> refreshRoutines(true) }
-                .setNegativeButton("Закрыть", null)
+                .setMessage(tr("Сначала дождись загрузки ручных сценариев Samsung.", "Wait for Samsung manual routines to load first."))
+                .setPositiveButton(tr("Обновить", "Refresh")) { _, _ -> refreshRoutines(true) }
+                .setNegativeButton(tr("Закрыть", "Close"), null)
                 .show()
             return
         }
@@ -356,11 +409,11 @@ class MainActivity : Activity() {
             setPadding(dp(22), dp(12), dp(22), 0)
         }
         val name = EditText(this).apply {
-            hint = "Название входа"
+            hint = tr("Название входа", "Input name")
             setSingleLine(true)
             setText(existing?.label ?: "")
         }
-        form.addView(text("Название входа", 14f, secondary))
+        form.addView(text(tr("Название входа", "Input name"), 14f, secondary))
         form.addView(name, matchWrap())
 
         val routineSpinner = Spinner(this)
@@ -369,25 +422,25 @@ class MainActivity : Activity() {
         prepareSpinner(routineSpinner)
         val selectedRoutine = routines.indexOfFirst { it.uuid == existing?.routineUuid }
         if (selectedRoutine >= 0) routineSpinner.setSelection(selectedRoutine)
-        form.addView(text("Ручной сценарий Samsung", 14f, secondary)
+        form.addView(text(tr("Ручной сценарий Samsung", "Samsung manual routine"), 14f, secondary)
             .also { it.setPadding(0, dp(12), 0, 0) })
         form.addView(routineSpinner, matchWrap())
 
         val actionSpinner = Spinner(this)
         val actionValues = RoutineInputAction.entries
-        actionSpinner.adapter = themedSpinnerAdapter(actionValues.map { it.title })
+        actionSpinner.adapter = themedSpinnerAdapter(actionValues.map { actionTitle(it) })
         prepareSpinner(actionSpinner)
         actionSpinner.setSelection(actionValues.indexOf(existing?.action)
             .takeIf { it >= 0 } ?: 2)
-        form.addView(text("Действие", 14f, secondary)
+        form.addView(text(tr("Действие", "Action"), 14f, secondary)
             .also { it.setPadding(0, dp(12), 0, 0) })
         form.addView(actionSpinner, matchWrap())
 
         val dialog = AlertDialog.Builder(this)
-            .setTitle(if (existing == null) "Новый вход" else "Изменить вход")
+            .setTitle(if (existing == null) tr("Новый вход", "New input") else tr("Изменить вход", "Edit input"))
             .setView(form)
-            .setNegativeButton("Отмена", null)
-            .setPositiveButton("Сохранить", null)
+            .setNegativeButton(tr("Отмена", "Cancel"), null)
+            .setPositiveButton(tr("Сохранить", "Save"), null)
             .create()
 
         dialog.setOnShowListener {
@@ -419,7 +472,7 @@ class MainActivity : Activity() {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val label = name.text.toString().trim()
                 if (label.isEmpty()) {
-                    name.error = "Введи название"
+                    name.error = tr("Введи название", "Enter a name")
                     return@setOnClickListener
                 }
                 val routine = routines[routineSpinner.selectedItemPosition]
@@ -440,10 +493,10 @@ class MainActivity : Activity() {
 
     private fun confirmDelete(input: RoutineInput) {
         AlertDialog.Builder(this)
-            .setTitle("Удалить вход?")
-            .setMessage("«${input.label}» и его ярлык будут удалены.")
-            .setNegativeButton("Отмена", null)
-            .setPositiveButton("Удалить") { _, _ ->
+            .setTitle(tr("Удалить вход?", "Delete input?"))
+            .setMessage(tr("«${input.label}» и его ярлык будут удалены.", "“${input.label}” and its shortcut will be deleted."))
+            .setNegativeButton(tr("Отмена", "Cancel"), null)
+            .setPositiveButton(tr("Удалить", "Delete")) { _, _ ->
                 persist(inputs.filterNot { it.id == input.id })
             }
             .show()
@@ -455,10 +508,13 @@ class MainActivity : Activity() {
             RoutineShortcutPublisher(this).publishAll(updated)
             inputs = updated
             editingInputId = null
-            status.text = "Настройки сохранены. Ярлыков: ${inputs.size}"
+            status.text = tr("Настройки сохранены. Ярлыков: ${inputs.size}", "Settings saved. Shortcuts: ${inputs.size}")
             renderInputs()
         } catch (e: Exception) {
-            status.text = "Ошибка сохранения: ${e.message}"
+            status.text = if (e is RootAccessException)
+                tr("Root-доступ недоступен.", "Root access unavailable.")
+            else
+                tr("Ошибка сохранения: ${e.message}", "Save error: ${e.message}")
         }
     }
 
@@ -477,23 +533,26 @@ class MainActivity : Activity() {
 
         val input = inputs.firstOrNull { it.id == id } ?: run {
             Log.e(LOG_TAG, "SHORTCUT_ERROR request=$requestId reason=input_not_found")
-            status.text = "Вход не найден. Открой приложение и обнови ярлыки."
+            status.text = tr("Вход не найден. Открой приложение и обнови ярлыки.", "Input not found. Open the app and refresh shortcuts.")
             return
         }
 
         busy = true
         Log.i(LOG_TAG, "SHORTCUT_ACCEPTED request=$requestId label=${input.label} action=${input.action} routineUuid=${input.routineUuid}")
-        status.text = "Выполняю: ${input.label}…"
+        status.text = tr("Выполняю: ${input.label}…", "Running: ${input.label}…")
 
         Thread {
             try {
-                val result = RoutineActionExecutor(repository).execute(input, requestId)
+                val result = RoutineActionExecutor(repository, english).execute(input, requestId)
                 Log.i(LOG_TAG, "SHORTCUT_FINISHED request=$requestId result=$result")
-                runOnUiThread { status.text = result; busy = false }
+                runOnUiThread { setStatus(result); busy = false }
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "SHORTCUT_FAILED request=$requestId error=${e.message}", e)
                 runOnUiThread {
-                    status.text = "Не удалось выполнить «${input.label}»: ${e.message}"
+                    status.text = if (e is RootAccessException)
+                        tr("Root-доступ недоступен.", "Root access unavailable.")
+                    else
+                        tr("Не удалось выполнить «${input.label}»: ${e.message}", "Could not run “${input.label}”: ${e.message}")
                     busy = false
                 }
             }

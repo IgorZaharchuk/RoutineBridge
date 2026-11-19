@@ -37,10 +37,25 @@ class ShortcutRunActivity : Activity() {
 
         Thread {
             try {
-                val result = RoutineActionExecutor().execute(input, requestId)
+                val result = RoutineActionExecutor(
+                    english = getSharedPreferences("settings", MODE_PRIVATE)
+                        .getBoolean("english", false)
+                ).execute(input, requestId)
                 Log.i(LOG_TAG, "SHORTCUT_RUN_FINISHED request=$requestId result=$result")
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "SHORTCUT_RUN_FAILED request=$requestId error=${e.message}", e)
+                val english = getSharedPreferences("settings", MODE_PRIVATE)
+                    .getBoolean("english", false)
+                val message = if (e is RootAccessException) {
+                    if (english) "Root access unavailable." else "Root-доступ недоступен."
+                } else {
+                    e.message ?: if (english) "Action failed." else "Не удалось выполнить действие."
+                }
+                runOnUiThread {
+                    android.widget.Toast.makeText(
+                        this@ShortcutRunActivity, message, android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
             } finally {
                 runOnUiThread { finish() }
             }
