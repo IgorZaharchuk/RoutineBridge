@@ -61,7 +61,6 @@ class RoutineActionExecutor(
 
         val command = "am start -W -n " +
             "com.samsung.android.app.routines/.ui.shortcut.ShortcutLaunchActivity " +
-            "--es EXTRA_KEY_ROUTINE_NAME ${quote(routine.name)} " +
             "--el EXTRA_KEY_ROUTINE_UUID ${routine.uuid} -f 0x10008000"
 
         Log.i(LOG_TAG, "SAMSUNG_LAUNCH request=$requestId")
@@ -109,9 +108,6 @@ class RoutineActionExecutor(
 
     private fun runRoot(command: String): String =
         RootCommand.execute(command, 15)
-
-    private fun quote(value: String) =
-        "'" + value.replace("'", "'\\''") + "'"
 
     private companion object {
         const val LOG_TAG = "RoutineBridge"
