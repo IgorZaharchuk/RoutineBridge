@@ -1,12 +1,20 @@
 package com.routinebridge
 
 import android.util.Log
+import java.util.concurrent.ConcurrentHashMap
 
 class RoutineActionExecutor(
     private val repository: ManualRoutineRepository = ManualRoutineRepository(),
     private val english: Boolean = false
 ) {
     fun execute(input: RoutineInput, requestId: String): String {
+        val lock = routineLocks.computeIfAbsent(input.routineUuid.toString()) { Any() }
+        return synchronized(lock) {
+            executeLocked(input, requestId)
+        }
+    }
+
+    private fun executeLocked(input: RoutineInput, requestId: String): String {
         Log.i(
             LOG_TAG,
             "EXEC_START request=$requestId input=${input.id} action=${input.action} uuid=${input.routineUuid}"
@@ -107,5 +115,6 @@ class RoutineActionExecutor(
 
     private companion object {
         const val LOG_TAG = "RoutineBridge"
+        val routineLocks = ConcurrentHashMap<String, Any>()
     }
 }

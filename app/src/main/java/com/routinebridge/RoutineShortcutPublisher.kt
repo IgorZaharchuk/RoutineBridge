@@ -19,7 +19,6 @@ class RoutineShortcutPublisher(private val context: Context) {
             val intent = Intent(context, ShortcutRunActivity::class.java).apply {
                 action = MainActivity.ACTION_RUN_INPUT
                 putExtra(MainActivity.EXTRA_INPUT_ID, input.id)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
             ShortcutInfo.Builder(context, "routine_input_${input.id}")
                 .setShortLabel(input.label.take(25))

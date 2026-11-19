@@ -29,7 +29,6 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var status: TextView
     private lateinit var inputContainer: LinearLayout
-    private var busy = false
     private var english = false
     private val preferences by lazy {
         getSharedPreferences("settings", MODE_PRIVATE)
@@ -529,12 +528,7 @@ class MainActivity : Activity() {
         val requestId = UUID.randomUUID().toString().take(8)
         val source = referrer?.toString()
 
-        Log.i(LOG_TAG, "SHORTCUT_RECEIVED request=$requestId input=$id busy=$busy referrer=$source flags=${intent.flags}")
-
-        if (busy) {
-            Log.w(LOG_TAG, "SHORTCUT_IGNORED request=$requestId reason=busy")
-            return
-        }
+        Log.i(LOG_TAG, "SHORTCUT_RECEIVED request=$requestId input=$id referrer=$source flags=${intent.flags}")
 
         val input = inputs.firstOrNull { it.id == id } ?: run {
             Log.e(LOG_TAG, "SHORTCUT_ERROR request=$requestId reason=input_not_found")
@@ -542,7 +536,6 @@ class MainActivity : Activity() {
             return
         }
 
-        busy = true
         Log.i(LOG_TAG, "SHORTCUT_ACCEPTED request=$requestId label=${input.label} action=${input.action} routineUuid=${input.routineUuid}")
         status.text = tr("Выполняю: ${input.label}…", "Running: ${input.label}…")
 
@@ -550,7 +543,7 @@ class MainActivity : Activity() {
             try {
                 val result = RoutineActionExecutor(repository, english).execute(input, requestId)
                 Log.i(LOG_TAG, "SHORTCUT_FINISHED request=$requestId result=$result")
-                runOnUiThread { setStatus(result); busy = false }
+                runOnUiThread { setStatus(result) }
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "SHORTCUT_FAILED request=$requestId error=${e.message}", e)
                 runOnUiThread {
@@ -558,7 +551,6 @@ class MainActivity : Activity() {
                         tr("Root-доступ недоступен.", "Root access unavailable.")
                     else
                         tr("Не удалось выполнить «${input.label}»: ${e.message}", "Could not run “${input.label}”: ${e.message}")
-                    busy = false
                 }
             }
         }.start()
