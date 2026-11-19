@@ -35,7 +35,8 @@ class RoutineActionExecutor(
             "--el EXTRA_KEY_ROUTINE_UUID ${routine.uuid} -f 0x10008000"
 
         Log.i(LOG_TAG, "SAMSUNG_LAUNCH request=$requestId")
-        val output = runRoot(command)\n        Log.i(LOG_TAG, "SAMSUNG_RETURN request=$requestId output=${output.take(500)}")
+        val output = runRoot(command)
+        Log.i(LOG_TAG, "SAMSUNG_RETURN request=$requestId output=${output.take(500)}")
         if (output.contains("Error:", true) || output.contains("Exception", true)) {
             throw IllegalStateException("Samsung вернул ошибку:\n$output")
         }
