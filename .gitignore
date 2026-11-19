@@ -4,3 +4,12 @@ local.properties
 **/build/
 *.iml
 .DS_Store
+
+# Android release signing keys
+*.jks
+*.keystore
+*.p12
+*.pfx
+
+# Local keystore output
+output/
