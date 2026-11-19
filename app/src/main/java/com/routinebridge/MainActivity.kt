@@ -9,7 +9,6 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.View
-import android.util.Log
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.widget.ArrayAdapter
@@ -84,14 +83,7 @@ class MainActivity : Activity() {
         inputs = store.load()
         english = preferences.getBoolean("english", false)
         buildScreen()
-        handleShortcutIntent(intent)
         refreshRoutines(false)
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleShortcutIntent(intent)
     }
 
     private fun buildScreen() {
@@ -223,8 +215,16 @@ class MainActivity : Activity() {
                 text(if (uuid in collapsedGroups) "›" else "⌄", 22f, blue, true)
                     .also { it.setPadding(0, 0, dp(12), 0) }
             )
+            val currentRoutine = routines.firstOrNull { it.uuid == uuid }
+            val routineName = currentRoutine?.name ?: group.first().routineName
+            val displayedRoutineName = if (currentRoutine == null) {
+                "$routineName${tr(" — не найден в Samsung", " — not found in Samsung")}"
+            } else {
+                routineName
+            }
+
             header.addView(
-                text(group.first().routineName, 17f, white, true),
+                text(displayedRoutineName, 17f, white, true),
                 LinearLayout.LayoutParams(0, -2, 1f)
             )
             header.addView(
@@ -315,7 +315,15 @@ class MainActivity : Activity() {
                 .also { it.setPadding(0, dp(10), 0, 0) }
         )
         val routineSpinner = Spinner(this)
-        routineSpinner.adapter = themedSpinnerAdapter(options.map { it.name })
+        routineSpinner.adapter = themedSpinnerAdapter(options.map { routine ->
+            if (routine.uuid == input.routineUuid &&
+                routines.none { it.uuid == input.routineUuid }
+            ) {
+                "${routine.name}${tr(" — не найден в Samsung", " — not found in Samsung")}"
+            } else {
+                routine.name
+            }
+        })
         prepareSpinner(routineSpinner)
         routineSpinner.setSelection(
             options.indexOfFirst { it.uuid == input.routineUuid }.coerceAtLeast(0)
@@ -387,7 +395,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     routines = loaded
                     setStatus(tr("Найдено ручных сценариев: ${loaded.size}", "Manual routines found: ${loaded.size}"))
-                    if (showMessage) renderInputs()
+                    renderInputs()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -535,40 +543,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun handleShortcutIntent(intent: Intent?) {
-        if (intent?.action != ACTION_RUN_INPUT) return
-        val id = intent.getStringExtra(EXTRA_INPUT_ID) ?: return
-        val requestId = UUID.randomUUID().toString().take(8)
-        val source = referrer?.toString()
-
-        Log.i(LOG_TAG, "SHORTCUT_RECEIVED request=$requestId input=$id referrer=$source flags=${intent.flags}")
-
-        val input = inputs.firstOrNull { it.id == id } ?: run {
-            Log.e(LOG_TAG, "SHORTCUT_ERROR request=$requestId reason=input_not_found")
-            status.text = tr("Вход не найден. Открой приложение и обнови ярлыки.", "Input not found. Open the app and refresh shortcuts.")
-            return
-        }
-
-        Log.i(LOG_TAG, "SHORTCUT_ACCEPTED request=$requestId label=${input.label} action=${input.action} routineUuid=${input.routineUuid}")
-        status.text = tr("Выполняю: ${input.label}…", "Running: ${input.label}…")
-
-        Thread {
-            try {
-                val result = RoutineActionExecutor(repository, english).execute(input, requestId)
-                Log.i(LOG_TAG, "SHORTCUT_FINISHED request=$requestId result=$result")
-                runOnUiThread { setStatus(result) }
-            } catch (e: Exception) {
-                Log.e(LOG_TAG, "SHORTCUT_FAILED request=$requestId error=${e.message}", e)
-                runOnUiThread {
-                    status.text = if (e is RootAccessException)
-                        tr("Root-доступ недоступен.", "Root access unavailable.")
-                    else
-                        tr("Не удалось выполнить «${input.label}»: ${e.message}", "Could not run “${input.label}”: ${e.message}")
-                }
-            }
-        }.start()
-    }
-
     private fun text(value: String, size: Float, color: Int, bold: Boolean = false) =
         TextView(this).apply {
             text = value
@@ -645,7 +619,6 @@ class MainActivity : Activity() {
     private fun matchWrap() = LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT)
 
     companion object {
-        private const val LOG_TAG = "RoutineBridge"
         const val ACTION_RUN_INPUT = "com.routinebridge.action.RUN_INPUT"
         const val EXTRA_INPUT_ID = "routine_input_id"
     }

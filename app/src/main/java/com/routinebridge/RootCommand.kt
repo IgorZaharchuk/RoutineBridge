@@ -1,7 +1,10 @@
 package com.routinebridge
 
 import java.io.IOException
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 class RootAccessException : IllegalStateException()
 
@@ -15,22 +18,47 @@ object RootCommand {
             throw RootAccessException()
         }
 
-        val captured = StringBuilder()
-        val reader = Thread {
-            process.inputStream.bufferedReader().useLines { lines ->
-                captured.append(lines.joinToString("\n"))
-            }
+        val outputReader = FutureTask<String> {
+            process.inputStream.bufferedReader().use { it.readText() }
         }
-        reader.start()
+
+        Thread(outputReader, "RootCommand-output").apply {
+            isDaemon = true
+            start()
+        }
+
+        try {
+            process.outputStream.close()
+        } catch (e: IOException) {
+            process.destroyForcibly()
+            outputReader.cancel(true)
+            throw IllegalStateException("Не удалось закрыть stdin root-команды", e)
+        }
 
         if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
             process.destroyForcibly()
-            reader.join(500)
+            process.waitFor(1, TimeUnit.SECONDS)
+            runCatching { process.inputStream.close() }
+            outputReader.cancel(true)
             throw IllegalStateException("Root-команда превысила таймаут")
         }
 
-        reader.join(1000)
-        val output = captured.toString()
+        val output = try {
+            outputReader.get(2, TimeUnit.SECONDS)
+        } catch (e: ExecutionException) {
+            throw IllegalStateException(
+                "Не удалось прочитать вывод root-команды",
+                e.cause
+            )
+        } catch (e: TimeoutException) {
+            runCatching { process.inputStream.close() }
+            outputReader.cancel(true)
+            throw IllegalStateException(
+                "Не удалось завершить чтение вывода root-команды",
+                e
+            )
+        }
+
         val exitCode = process.exitValue()
 
         if (exitCode != 0) {

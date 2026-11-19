@@ -29,13 +29,20 @@ class RoutineActionExecutor(
             )
         )
 
-        if (routine.isEnabled == false) {
-            throw IllegalStateException(
+        when (routine.isEnabled) {
+            false -> throw IllegalStateException(
                 message(
                     "Сценарий «${routine.name}» отключён в Samsung",
                     "Routine “${routine.name}” is disabled in Samsung"
                 )
             )
+            null -> throw IllegalStateException(
+                message(
+                    "Не удалось определить, включён ли сценарий в Samsung",
+                    "Could not determine whether the routine is enabled in Samsung"
+                )
+            )
+            true -> Unit
         }
 
         val current = routine.isRunning ?: throw IllegalStateException(
