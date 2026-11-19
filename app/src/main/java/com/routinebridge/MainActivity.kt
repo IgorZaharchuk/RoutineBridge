@@ -36,7 +36,8 @@ class MainActivity : Activity() {
 
     private val bg = Color.rgb(18, 18, 18)
     private val surface = Color.rgb(30, 30, 30)
-    private val variant = Color.rgb(48, 64, 86)
+    private val variant = Color.rgb(25, 31, 45)
+    private val dialogVariant = Color.rgb(48, 64, 86)
     private val blue = Color.rgb(74, 144, 217)
     private val white = Color.WHITE
     private val secondary = Color.rgb(208, 214, 226)
@@ -402,15 +403,19 @@ class MainActivity : Activity() {
             dialog.window?.setBackgroundDrawable(rounded(surface, 16))
             val cancelButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
             val saveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            styleButton(cancelButton)
-            styleButton(saveButton)
+            styleButton(cancelButton, dialogVariant)
+            styleButton(saveButton, dialogVariant)
 
             (cancelButton.layoutParams as? LinearLayout.LayoutParams)?.let {
+                it.width = 0
+                it.weight = 1f
                 it.marginStart = dp(8)
                 it.marginEnd = dp(6)
                 cancelButton.layoutParams = it
             }
             (saveButton.layoutParams as? LinearLayout.LayoutParams)?.let {
+                it.width = 0
+                it.weight = 1f
                 it.marginStart = dp(6)
                 it.marginEnd = dp(8)
                 saveButton.layoutParams = it
@@ -508,13 +513,13 @@ class MainActivity : Activity() {
             if (bold) setTypeface(typeface, Typeface.BOLD)
         }
 
-    private fun styleButton(button: Button) {
+    private fun styleButton(button: Button, backgroundColor: Int = variant) {
         button.isAllCaps = false
         button.setTextColor(white)
         button.textSize = 13f
         button.typeface = Typeface.DEFAULT_BOLD
         button.gravity = android.view.Gravity.CENTER
-        button.background = rounded(variant, 8)
+        button.background = rounded(backgroundColor, 8)
         button.stateListAnimator = null
         button.elevation = 0f
         button.minimumWidth = 0
