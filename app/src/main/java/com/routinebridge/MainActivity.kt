@@ -28,7 +28,6 @@ class MainActivity : Activity() {
     private var routines = emptyList<ManualRoutine>()
     private lateinit var content: LinearLayout
     private lateinit var status: TextView
-    private lateinit var addButton: Button
     private lateinit var inputContainer: LinearLayout
     private var busy = false
     private var english = false
@@ -154,8 +153,10 @@ class MainActivity : Activity() {
         status.background = rounded(variant, 10)
         content.addView(status, matchWrap().apply { bottomMargin = dp(10) })
 
-        addButton = button(tr("＋  Добавить вход", "＋  Add input")) { openEditor(null) }
-        content.addView(addButton, matchWrap().apply { bottomMargin = dp(8) })
+        content.addView(
+            button(tr("＋  Добавить вход", "＋  Add input")) { openEditor() },
+            matchWrap().apply { bottomMargin = dp(8) }
+        )
         content.addView(button(tr("Обновить список сценариев", "Refresh routines")) { refreshRoutines(true) }, matchWrap().apply { bottomMargin = dp(8) })
 
         content.addView(text(tr("Мои входы", "My inputs"), 19f, white, true)
@@ -404,7 +405,7 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun openEditor(existing: RoutineInput?) {
+    private fun openEditor() {
         if (routines.isEmpty()) {
             AlertDialog.Builder(this)
                 .setMessage(tr("Сначала дождись загрузки ручных сценариев Samsung.", "Wait for Samsung manual routines to load first."))
@@ -421,7 +422,6 @@ class MainActivity : Activity() {
         val name = EditText(this).apply {
             hint = tr("Название входа", "Input name")
             setSingleLine(true)
-            setText(existing?.label ?: "")
         }
         form.addView(text(tr("Название входа", "Input name"), 14f, secondary))
         form.addView(name, matchWrap())
@@ -430,8 +430,6 @@ class MainActivity : Activity() {
         val routineLabels = routines.map { it.name }
         routineSpinner.adapter = themedSpinnerAdapter(routineLabels)
         prepareSpinner(routineSpinner)
-        val selectedRoutine = routines.indexOfFirst { it.uuid == existing?.routineUuid }
-        if (selectedRoutine >= 0) routineSpinner.setSelection(selectedRoutine)
         form.addView(text(tr("Ручной сценарий Samsung", "Samsung manual routine"), 14f, secondary)
             .also { it.setPadding(0, dp(12), 0, 0) })
         form.addView(routineSpinner, matchWrap())
@@ -440,14 +438,13 @@ class MainActivity : Activity() {
         val actionValues = RoutineInputAction.entries
         actionSpinner.adapter = themedSpinnerAdapter(actionValues.map { actionTitle(it) })
         prepareSpinner(actionSpinner)
-        actionSpinner.setSelection(actionValues.indexOf(existing?.action)
-            .takeIf { it >= 0 } ?: 2)
+        actionSpinner.setSelection(2)
         form.addView(text(tr("Действие", "Action"), 14f, secondary)
             .also { it.setPadding(0, dp(12), 0, 0) })
         form.addView(actionSpinner, matchWrap())
 
         val dialog = AlertDialog.Builder(this)
-            .setTitle(if (existing == null) tr("Новый вход", "New input") else tr("Изменить вход", "Edit input"))
+            .setTitle(tr("Новый вход", "New input"))
             .setView(form)
             .setNegativeButton(tr("Отмена", "Cancel"), null)
             .setPositiveButton(tr("Сохранить", "Save"), null)
@@ -487,7 +484,7 @@ class MainActivity : Activity() {
                 }
                 val routine = routines[routineSpinner.selectedItemPosition]
                 val item = RoutineInput(
-                    id = existing?.id ?: UUID.randomUUID().toString(),
+                    id = UUID.randomUUID().toString(),
                     label = label,
                     routineUuid = routine.uuid,
                     routineName = routine.name,

@@ -1,9 +1,9 @@
 package com.routinebridge
 
-enum class RoutineInputAction(val title: String) {
-    ENABLE("Включить"),
-    DISABLE("Выключить"),
-    TOGGLE("Переключить")
+enum class RoutineInputAction {
+    ENABLE,
+    DISABLE,
+    TOGGLE
 }
 
 data class RoutineInput(
