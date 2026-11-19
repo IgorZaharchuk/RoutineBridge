@@ -412,6 +412,8 @@ class MainActivity : Activity() {
             return
         }
 
+        val availableRoutines = routines.toList()
+
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(22), dp(12), dp(22), 0)
@@ -424,7 +426,7 @@ class MainActivity : Activity() {
         form.addView(name, matchWrap())
 
         val routineSpinner = Spinner(this)
-        val routineLabels = routines.map { it.name }
+        val routineLabels = availableRoutines.map { it.name }
         routineSpinner.adapter = themedSpinnerAdapter(routineLabels)
         prepareSpinner(routineSpinner)
         form.addView(text(tr("Ручной сценарий Samsung", "Samsung manual routine"), 14f, secondary)
@@ -479,7 +481,7 @@ class MainActivity : Activity() {
                     name.error = tr("Введи название", "Enter a name")
                     return@setOnClickListener
                 }
-                val routine = routines[routineSpinner.selectedItemPosition]
+                val routine = availableRoutines[routineSpinner.selectedItemPosition]
                 val item = RoutineInput(
                     id = UUID.randomUUID().toString(),
                     label = label,
