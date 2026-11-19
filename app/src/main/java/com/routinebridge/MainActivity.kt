@@ -197,49 +197,94 @@ class MainActivity : Activity() {
     }
 
     private fun loadManualRoutines() {
-        routinesOutput.text = "Загрузка списка..."
-        try {
-            val uri = Uri.parse("content://$authority/routine_list").buildUpon()
-                .appendQueryParameter("routine_type", "normal")
-                .appendQueryParameter("condition_type", "manual")
-                .build()
+        routinesOutput.text = "Загрузка списка через Root..."
 
-            val cursor = contentResolver.query(uri, null, null, null, null)
-                ?: throw IllegalStateException("Samsung Provider вернул пустой Cursor")
+        Thread {
+            try {
+                val uri = "content://$authority/routine_list" +
+                    "?routine_type=normal&condition_type=manual"
+                val command = "content query --uri '$uri'"
 
-            cursor.use {
-                val uuidColumn = it.getColumnIndexOrThrow("uuid")
-                val nameColumn = it.getColumnIndexOrThrow("name")
-                val runningColumn = it.getColumnIndexOrThrow("is_running")
-                val enabledColumn = it.getColumnIndexOrThrow("is_enabled")
+                val process = ProcessBuilder("su", "-c", command)
+                    .redirectErrorStream(true)
+                    .start()
 
-                val lines = mutableListOf<String>()
-                while (it.moveToNext()) {
-                    val uuid = it.getString(uuidColumn)
-                    val name = it.getString(nameColumn) ?: "Без названия"
-                    val running = it.getInt(runningColumn) == 1
-                    val enabled = it.getInt(enabledColumn) == 1
-                    val state = if (running) "ВКЛЮЧЁН" else "выключен"
-                    val availability = if (enabled) "" else " (отключён в Samsung)"
-                    lines += "• $name — $state$availability\n  UUID: $uuid"
+                val captured = StringBuilder()
+                val reader = Thread {
+                    process.inputStream.bufferedReader().useLines { lines ->
+                        captured.append(lines.joinToString("\n"))
+                    }
+                }
+                reader.start()
+
+                if (!process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                    process.destroyForcibly()
+                    reader.join(500)
+                    throw IllegalStateException("Root-команда превысила таймаут 10 секунд")
                 }
 
-                routinesOutput.text = if (lines.isEmpty()) {
-                    "Ручные сценарии не найдены."
-                } else {
-                    "Найдено ручных сценариев: ${lines.size}\n\n" +
-                        lines.joinToString("\n\n")
+                reader.join(1000)
+                val result = captured.toString()
+                val exitCode = process.exitValue()
+
+                if (exitCode != 0) {
+                    throw IllegalStateException(
+                        "Команда завершилась с кодом $exitCode:\n$result"
+                    )
+                }
+
+                val uuidRegex = Regex("""\buuid=(\d+)""")
+                val nameRegex = Regex("""\bname=(.*?), icon_resource_id=""")
+                val runningRegex = Regex("""\bis_running=([01])\b""")
+                val enabledRegex = Regex("""\bis_enabled=([01])\b""")
+
+                val rows = result.lineSequence()
+                    .filter { it.startsWith("Row:") }
+                    .mapNotNull { line ->
+                        val uuid = uuidRegex.find(line)?.groupValues?.get(1)
+                            ?: return@mapNotNull null
+                        val name = nameRegex.find(line)?.groupValues?.get(1)
+                            ?.trim() ?: "Без названия"
+
+                        val running = runningRegex.find(line)?.groupValues?.get(1)
+                        val enabled = enabledRegex.find(line)?.groupValues?.get(1)
+
+                        val state = when (running) {
+                            "1" -> "ВКЛЮЧЁН"
+                            "0" -> "выключен"
+                            else -> "состояние неизвестно"
+                        }
+                        val availability = when (enabled) {
+                            "0" -> " (отключён в Samsung)"
+                            "1" -> ""
+                            else -> " (доступность неизвестна)"
+                        }
+
+                        "• $name — $state$availability\n  UUID: $uuid"
+                    }
+                    .toList()
+
+                val display = when {
+                    rows.isNotEmpty() ->
+                        "Найдено ручных сценариев: ${rows.size}\n\n" +
+                            rows.joinToString("\n\n")
+                    "No result found" in result ->
+                        "Samsung Provider вернул пустой список."
+                    else ->
+                        "Строки сценариев не обнаружены.\n\nОтвет:\n$result"
+                }
+
+                runOnUiThread {
+                    routinesOutput.text = display
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    routinesOutput.text =
+                        "Не удалось загрузить сценарии через Root.\n" +
+                        "${e.javaClass.simpleName}: ${e.message}"
                 }
             }
-        } catch (e: SecurityException) {
-            routinesOutput.text =
-                "Samsung Provider запретил чтение списка.\n" +
-                "${e.javaClass.simpleName}: ${e.message}"
-        } catch (e: Exception) {
-            routinesOutput.text =
-                "Не удалось прочитать ручные сценарии.\n" +
-                "${e.javaClass.simpleName}: ${e.message}"
-        }
+        }.start()
     }
 
     private fun copyReport() {
