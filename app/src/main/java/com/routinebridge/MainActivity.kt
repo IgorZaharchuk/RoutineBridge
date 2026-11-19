@@ -259,11 +259,8 @@ class MainActivity : Activity() {
                 .also { it.setPadding(0, dp(10), 0, 0) }
         )
         val routineSpinner = Spinner(this)
-        routineSpinner.adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            options.map { it.name }
-        )
+        routineSpinner.adapter = themedSpinnerAdapter(options.map { it.name })
+        prepareSpinner(routineSpinner)
         routineSpinner.setSelection(
             options.indexOfFirst { it.uuid == input.routineUuid }.coerceAtLeast(0)
         )
@@ -275,11 +272,8 @@ class MainActivity : Activity() {
         )
         val actionValues = RoutineInputAction.entries
         val actionSpinner = Spinner(this)
-        actionSpinner.adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            actionValues.map { it.title }
-        )
+        actionSpinner.adapter = themedSpinnerAdapter(actionValues.map { it.title })
+        prepareSpinner(actionSpinner)
         actionSpinner.setSelection(actionValues.indexOf(input.action).coerceAtLeast(0))
         form.addView(actionSpinner, matchWrap())
 
@@ -288,14 +282,14 @@ class MainActivity : Activity() {
             gravity = android.view.Gravity.CENTER_VERTICAL
         }
 
-        buttons.addView(button("Удалить") {
+        buttons.addView(dialogButton("Удалить") {
             confirmDelete(input)
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
             leftMargin = dp(4)
             rightMargin = dp(4)
         })
 
-        buttons.addView(button("Отмена") {
+        buttons.addView(dialogButton("Отмена") {
             editingInputId = null
             renderInputs()
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
@@ -303,7 +297,7 @@ class MainActivity : Activity() {
             rightMargin = dp(4)
         })
 
-        buttons.addView(button("Сохранить") {
+        buttons.addView(dialogButton("Сохранить") {
             val label = name.text.toString().trim()
             if (label.isEmpty()) {
                 name.error = "Введи название"
@@ -371,9 +365,8 @@ class MainActivity : Activity() {
 
         val routineSpinner = Spinner(this)
         val routineLabels = routines.map { it.name }
-        routineSpinner.adapter = ArrayAdapter(
-            this, android.R.layout.simple_spinner_dropdown_item, routineLabels
-        )
+        routineSpinner.adapter = themedSpinnerAdapter(routineLabels)
+        prepareSpinner(routineSpinner)
         val selectedRoutine = routines.indexOfFirst { it.uuid == existing?.routineUuid }
         if (selectedRoutine >= 0) routineSpinner.setSelection(selectedRoutine)
         form.addView(text("Ручной сценарий Samsung", 14f, secondary)
@@ -382,10 +375,8 @@ class MainActivity : Activity() {
 
         val actionSpinner = Spinner(this)
         val actionValues = RoutineInputAction.entries
-        actionSpinner.adapter = ArrayAdapter(
-            this, android.R.layout.simple_spinner_dropdown_item,
-            actionValues.map { it.title }
-        )
+        actionSpinner.adapter = themedSpinnerAdapter(actionValues.map { it.title })
+        prepareSpinner(actionSpinner)
         actionSpinner.setSelection(actionValues.indexOf(existing?.action)
             .takeIf { it >= 0 } ?: 2)
         form.addView(text("Действие", 14f, secondary)
@@ -405,8 +396,11 @@ class MainActivity : Activity() {
             val saveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
             styleButton(cancelButton, dialogVariant)
             styleButton(saveButton, dialogVariant)
+            cancelButton.minHeight = dp(48)
+            saveButton.minHeight = dp(48)
 
             (cancelButton.layoutParams as? LinearLayout.LayoutParams)?.let {
+                it.height = dp(48)
                 it.width = 0
                 it.weight = 1f
                 it.marginStart = dp(8)
@@ -414,6 +408,7 @@ class MainActivity : Activity() {
                 cancelButton.layoutParams = it
             }
             (saveButton.layoutParams as? LinearLayout.LayoutParams)?.let {
+                it.height = dp(48)
                 it.width = 0
                 it.weight = 1f
                 it.marginStart = dp(6)
@@ -512,6 +507,44 @@ class MainActivity : Activity() {
             setTextColor(color)
             if (bold) setTypeface(typeface, Typeface.BOLD)
         }
+
+    private fun dialogButton(label: String, action: () -> Unit) =
+        Button(this).apply {
+            text = label
+            styleButton(this, dialogVariant)
+            minHeight = dp(48)
+            setOnClickListener { action() }
+        }
+
+    private fun themedSpinnerAdapter(items: List<String>): ArrayAdapter<String> =
+        object : ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, items) {
+            private fun makeTextView(convertView: View?, parent: ViewGroup,
+                                     position: Int, dropdown: Boolean): TextView {
+                val view = (convertView as? TextView) ?: TextView(this@MainActivity)
+                view.text = getItem(position) ?: ""
+                view.setTextColor(white)
+                view.textSize = 14f
+                view.gravity = android.view.Gravity.CENTER_VERTICAL
+                view.setPadding(dp(12), dp(10), dp(12), dp(10))
+                if (dropdown) view.setBackgroundColor(surface)
+                return view
+            }
+
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup) =
+                makeTextView(convertView, parent, position, false)
+
+            override fun getDropDownView(position: Int, convertView: View?,
+                                         parent: ViewGroup) =
+                makeTextView(convertView, parent, position, true)
+        }.also {
+            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+
+    private fun prepareSpinner(spinner: Spinner) {
+        spinner.popupBackground = rounded(surface, 8)
+        spinner.backgroundTintList =
+            android.content.res.ColorStateList.valueOf(dialogVariant)
+    }
 
     private fun styleButton(button: Button, backgroundColor: Int = variant) {
         button.isAllCaps = false

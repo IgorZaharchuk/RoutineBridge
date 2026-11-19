@@ -24,7 +24,7 @@ class RoutineShortcutPublisher(private val context: Context) {
             ShortcutInfo.Builder(context, "routine_input_${input.id}")
                 .setShortLabel(input.label.take(25))
                 .setLongLabel(input.label)
-                .setIcon(Icon.createWithResource(context, android.R.drawable.ic_menu_view))
+                .setIcon(Icon.createWithResource(context, R.mipmap.ic_launcher))
                 .setIntent(intent)
                 .build()
         }
