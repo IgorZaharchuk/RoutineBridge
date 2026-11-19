@@ -102,8 +102,8 @@ class MainActivity : Activity() {
         content.addView(status)
 
         addButton = button("＋  Добавить вход") { openEditor(null) }
-        content.addView(addButton, matchWrap())
-        content.addView(button("Обновить список сценариев") { refreshRoutines(true) }, matchWrap())
+        content.addView(addButton, matchWrap().apply { bottomMargin = dp(8) })
+        content.addView(button("Обновить список сценариев") { refreshRoutines(true) }, matchWrap().apply { bottomMargin = dp(8) })
 
         content.addView(text("Мои входы", 19f, white, true)
             .also { it.setPadding(0, dp(22), 0, dp(10)) })
@@ -145,7 +145,7 @@ class MainActivity : Activity() {
                 else collapsedGroups.addAll(groups.keys)
                 renderInputs()
             },
-            matchWrap()
+            matchWrap().apply { bottomMargin = dp(8) }
         )
 
         groups.forEach { (uuid, group) ->
@@ -289,12 +289,18 @@ class MainActivity : Activity() {
 
         buttons.addView(button("Удалить") {
             confirmDelete(input)
-        }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+            leftMargin = dp(4)
+            rightMargin = dp(4)
+        })
 
         buttons.addView(button("Отмена") {
             editingInputId = null
             renderInputs()
-        }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+            leftMargin = dp(4)
+            rightMargin = dp(4)
+        })
 
         buttons.addView(button("Сохранить") {
             val label = name.text.toString().trim()
@@ -313,7 +319,10 @@ class MainActivity : Activity() {
             persist(inputs.map {
                 if (it.id == input.id) updatedInput else it
             })
-        }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+            leftMargin = dp(4)
+            rightMargin = dp(4)
+        })
 
         form.addView(buttons, matchWrap())
         return form
@@ -490,7 +499,7 @@ class MainActivity : Activity() {
             textSize = 14f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = android.view.Gravity.CENTER
-            background = rounded(android.graphics.Color.rgb(48, 52, 59), 24)
+            background = rounded(variant, 8)
             stateListAnimator = null
             elevation = 0f
             setOnClickListener { action() }
