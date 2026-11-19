@@ -13,10 +13,10 @@ class ManualRoutineRepository {
 
         val result = RootCommand.execute(command, 10)
 
-        val uuidRegex = Regex("""\\buuid=(-?\\d+)""")
-        val nameRegex = Regex("""\\bname=(.*?), icon_resource_id=""")
-        val runningRegex = Regex("""\\bis_running=([01])\\b""")
-        val enabledRegex = Regex("""\\bis_enabled=([01])\\b""")
+        val uuidRegex = Regex("""\buuid=(-?\d+)""")
+        val nameRegex = Regex("""\bname=(.*?), icon_resource_id=""")
+        val runningRegex = Regex("""\bis_running=([01])\b""")
+        val enabledRegex = Regex("""\bis_enabled=([01])\b""")
 
         val rowLines = result.lineSequence()
             .filter { it.startsWith("Row:") }
@@ -26,7 +26,7 @@ class ManualRoutineRepository {
             if ("No result found" in result) return emptyList()
 
             throw IllegalStateException(
-                "Не удалось разобрать ответ Samsung Provider:\\n$result"
+                "Не удалось разобрать ответ Samsung Provider:\n$result"
             )
         }
 
