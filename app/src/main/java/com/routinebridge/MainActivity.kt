@@ -31,6 +31,8 @@ class MainActivity : Activity() {
     private lateinit var addButton: Button
     private lateinit var inputContainer: LinearLayout
     private var busy = false
+    private var editingInputId: String? = null
+    private val collapsedGroups = mutableSetOf<Long>()
 
     private val bg = Color.rgb(18, 18, 18)
     private val surface = Color.rgb(30, 30, 30)
@@ -119,7 +121,7 @@ class MainActivity : Activity() {
 
         if (inputs.isEmpty()) {
             inputContainer.addView(text(
-                "Пока нет входов.\\nДобавь вход, выбери ручной сценарий Samsung и действие.",
+                "Пока нет входов.\nДобавь вход, выбери ручной сценарий Samsung и действие.",
                 14f, secondary
             ).apply {
                 setPadding(dp(14), dp(18), dp(14), dp(18))
@@ -128,35 +130,187 @@ class MainActivity : Activity() {
             return
         }
 
-        inputs.forEach { input ->
-            val card = LinearLayout(this).apply {
+        val groups = inputs.groupBy { it.routineUuid }
+        val allCollapsed = groups.keys.all { it in collapsedGroups }
+
+        inputContainer.addView(
+            button(if (allCollapsed) "Развернуть все" else "Свернуть все") {
+                if (allCollapsed) collapsedGroups.clear()
+                else collapsedGroups.addAll(groups.keys)
+                renderInputs()
+            },
+            matchWrap()
+        )
+
+        groups.forEach { (uuid, group) ->
+            val groupBlock = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(14), dp(12), dp(14), dp(12))
-                background = rounded(surface, 14)
             }
-            card.addView(text(input.label, 17f, white, true))
-            card.addView(text(input.routineName, 14f, secondary)
-                .also { it.setPadding(0, dp(5), 0, dp(2)) })
-            card.addView(text(input.action.title, 13f, blue))
 
-            val actions = LinearLayout(this).apply {
+            val header = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(14), dp(14), dp(14))
+                background = rounded(variant, 12)
+                isClickable = true
+                isFocusable = true
             }
-            actions.addView(button("Изменить") { openEditor(input) },
-                LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                    marginEnd = dp(6)
-                })
-            actions.addView(button("Удалить") { confirmDelete(input) },
-                LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                    marginStart = dp(6)
-                })
-            card.addView(actions)
 
-            inputContainer.addView(card, matchWrap().apply {
-                topMargin = dp(8)
-                bottomMargin = dp(4)
+            header.addView(
+                text(if (uuid in collapsedGroups) "›" else "⌄", 22f, blue, true)
+                    .also { it.setPadding(0, 0, dp(12), 0) }
+            )
+            header.addView(
+                text(group.first().routineName, 17f, white, true),
+                LinearLayout.LayoutParams(0, -2, 1f)
+            )
+            header.addView(
+                text("${group.size} вход(ов)", 12f, secondary)
+            )
+
+            header.setOnClickListener {
+                if (!collapsedGroups.add(uuid)) collapsedGroups.remove(uuid)
+                renderInputs()
+            }
+            groupBlock.addView(header, matchWrap())
+
+            if (uuid !in collapsedGroups) {
+                group.forEach { input ->
+                    val card = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(14), dp(10), dp(14), dp(10))
+                        background = rounded(surface, 12)
+                    }
+
+                    val row = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = android.view.Gravity.CENTER_VERTICAL
+                    }
+                    val details = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                    }
+                    details.addView(text(input.label, 16f, white, true))
+                    details.addView(
+                        text(input.action.title, 13f, blue)
+                            .also { it.setPadding(0, dp(4), 0, 0) }
+                    )
+                    row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+
+                    val pencil = text("✎", 23f, blue, true).apply {
+                        gravity = android.view.Gravity.CENTER
+                        setPadding(dp(14), dp(4), dp(4), dp(4))
+                        contentDescription = "Редактировать вход"
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener {
+                            editingInputId =
+                                if (editingInputId == input.id) null else input.id
+                            renderInputs()
+                        }
+                    }
+                    row.addView(pencil, LinearLayout.LayoutParams(-2, dp(44)))
+                    card.addView(row, matchWrap())
+
+                    if (editingInputId == input.id) {
+                        card.addView(createInlineEditor(input), matchWrap())
+                    }
+
+                    groupBlock.addView(card, matchWrap().apply {
+                        topMargin = dp(6)
+                    })
+                }
+            }
+
+            inputContainer.addView(groupBlock, matchWrap().apply {
+                topMargin = dp(10)
             })
         }
+    }
+
+    private fun createInlineEditor(input: RoutineInput): View {
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(14), 0, dp(4))
+        }
+
+        form.addView(text("Название входа", 13f, secondary))
+        val name = EditText(this).apply {
+            setSingleLine(true)
+            setText(input.label)
+            setTextColor(white)
+            setHintTextColor(secondary)
+        }
+        form.addView(name, matchWrap())
+
+        val options = routines.toMutableList()
+        if (options.none { it.uuid == input.routineUuid }) {
+            options.add(0, ManualRoutine(input.routineUuid, input.routineName, null, null))
+        }
+
+        form.addView(
+            text("Ручной сценарий Samsung", 13f, secondary)
+                .also { it.setPadding(0, dp(10), 0, 0) }
+        )
+        val routineSpinner = Spinner(this)
+        routineSpinner.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            options.map { it.name }
+        )
+        routineSpinner.setSelection(
+            options.indexOfFirst { it.uuid == input.routineUuid }.coerceAtLeast(0)
+        )
+        form.addView(routineSpinner, matchWrap())
+
+        form.addView(
+            text("Действие", 13f, secondary)
+                .also { it.setPadding(0, dp(10), 0, 0) }
+        )
+        val actionValues = RoutineInputAction.entries
+        val actionSpinner = Spinner(this)
+        actionSpinner.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            actionValues.map { it.title }
+        )
+        actionSpinner.setSelection(actionValues.indexOf(input.action).coerceAtLeast(0))
+        form.addView(actionSpinner, matchWrap())
+
+        val buttons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+
+        buttons.addView(button("Удалить") {
+            confirmDelete(input)
+        }, LinearLayout.LayoutParams(0, dp(48), 1f))
+
+        buttons.addView(button("Отмена") {
+            editingInputId = null
+            renderInputs()
+        }, LinearLayout.LayoutParams(0, dp(48), 1f))
+
+        buttons.addView(button("Сохранить") {
+            val label = name.text.toString().trim()
+            if (label.isEmpty()) {
+                name.error = "Введи название"
+                return@button
+            }
+
+            val routine = options[routineSpinner.selectedItemPosition]
+            val updatedInput = input.copy(
+                label = label,
+                routineUuid = routine.uuid,
+                routineName = routine.name,
+                action = actionValues[actionSpinner.selectedItemPosition]
+            )
+            persist(inputs.map {
+                if (it.id == input.id) updatedInput else it
+            })
+        }, LinearLayout.LayoutParams(0, dp(48), 1f))
+
+        form.addView(buttons, matchWrap())
+        return form
     }
 
     private fun refreshRoutines(showMessage: Boolean) {
@@ -268,6 +422,7 @@ class MainActivity : Activity() {
             store.save(updated)
             RoutineShortcutPublisher(this).publishAll(updated)
             inputs = updated
+            editingInputId = null
             status.text = "Настройки сохранены. Ярлыков: ${inputs.size}"
             renderInputs()
         } catch (e: Exception) {
