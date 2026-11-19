@@ -510,8 +510,19 @@ class MainActivity : Activity() {
 
     private fun persist(updated: List<RoutineInput>) {
         try {
+            val removedInputIds = inputs
+                .filter { oldInput -> updated.none { it.id == oldInput.id } }
+                .map { it.id }
+
             store.save(updated)
-            RoutineShortcutPublisher(this).publishAll(updated)
+            RoutineShortcutPublisher(this).publishAll(
+                updated,
+                removedInputIds,
+                tr(
+                    "Этот вход удалён в RoutineBridge.",
+                    "This input was deleted in RoutineBridge."
+                )
+            )
             inputs = updated
             editingInputId = null
             status.text = tr("Настройки сохранены. Ярлыков: ${inputs.size}", "Settings saved. Shortcuts: ${inputs.size}")

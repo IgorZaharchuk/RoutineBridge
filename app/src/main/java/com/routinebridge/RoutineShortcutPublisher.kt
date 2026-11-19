@@ -7,11 +7,22 @@ import android.content.pm.ShortcutManager
 import android.graphics.drawable.Icon
 
 class RoutineShortcutPublisher(private val context: Context) {
-    fun publishAll(inputs: List<RoutineInput>): Boolean {
+    fun publishAll(
+        inputs: List<RoutineInput>,
+        removedInputIds: List<String> = emptyList(),
+        disabledMessage: CharSequence = "Этот вход больше не существует."
+    ): Boolean {
         val manager = context.getSystemService(ShortcutManager::class.java)
         if (inputs.size > manager.maxShortcutCountPerActivity) {
             throw IllegalStateException(
                 "Android разрешает не более ${manager.maxShortcutCountPerActivity} динамических ярлыков"
+            )
+        }
+
+        if (removedInputIds.isNotEmpty()) {
+            manager.disableShortcuts(
+                removedInputIds.map { "routine_input_$it" },
+                disabledMessage
             )
         }
 
