@@ -78,10 +78,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = bg
         window.navigationBarColor = bg
-        if (Build.VERSION.SDK_INT >= 29) {
-            window.isStatusBarContrastEnforced = false
-            window.isNavigationBarContrastEnforced = false
-        }
+        window.isStatusBarContrastEnforced = false
+        window.isNavigationBarContrastEnforced = false
         window.decorView.systemUiVisibility = 0
 
         inputs = store.load()
@@ -529,7 +527,7 @@ class MainActivity : Activity() {
         if (intent?.action != ACTION_RUN_INPUT) return
         val id = intent.getStringExtra(EXTRA_INPUT_ID) ?: return
         val requestId = UUID.randomUUID().toString().take(8)
-        val source = if (Build.VERSION.SDK_INT >= 22) referrer?.toString() else null
+        val source = referrer?.toString()
 
         Log.i(LOG_TAG, "SHORTCUT_RECEIVED request=$requestId input=$id busy=$busy referrer=$source flags=${intent.flags}")
 
