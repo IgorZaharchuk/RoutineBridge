@@ -29,6 +29,16 @@ class ShortcutRunActivity : Activity() {
         val input = RoutineInputStore(this).load().firstOrNull { it.id == id }
         if (input == null) {
             Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=input_not_found id=$id")
+            val english = getSharedPreferences("settings", MODE_PRIVATE)
+                .getBoolean("english", false)
+            val message = if (english) {
+                "This input no longer exists. Open RoutineBridge to refresh shortcuts."
+            } else {
+                "Этот вход больше не существует. Открой RoutineBridge и обнови ярлыки."
+            }
+            android.widget.Toast.makeText(
+                this, message, android.widget.Toast.LENGTH_LONG
+            ).show()
             finish()
             return
         }
