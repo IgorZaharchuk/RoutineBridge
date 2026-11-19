@@ -301,7 +301,7 @@ class MainActivity : Activity() {
             val label = name.text.toString().trim()
             if (label.isEmpty()) {
                 name.error = "Введи название"
-                return@button
+                return@dialogButton
             }
 
             val routine = options[routineSpinner.selectedItemPosition]
@@ -541,7 +541,7 @@ class MainActivity : Activity() {
         }
 
     private fun prepareSpinner(spinner: Spinner) {
-        spinner.popupBackground = rounded(surface, 8)
+        spinner.setPopupBackgroundDrawable(rounded(surface, 8))
         spinner.backgroundTintList =
             android.content.res.ColorStateList.valueOf(dialogVariant)
     }
