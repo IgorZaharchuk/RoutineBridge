@@ -128,16 +128,26 @@ class MainActivity : Activity() {
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        val title = text("RoutineBridge", 20f, white, true)
-        content.addView(title)
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        header.addView(
+            text("RoutineBridge", 20f, white, true),
+            LinearLayout.LayoutParams(0, -2, 1f)
+        )
+        header.addView(
+            button(if (english) "Русский" else "English") {
+                english = !english
+                preferences.edit().putBoolean("english", english).apply()
+                buildScreen()
+                refreshRoutines(false)
+            },
+            LinearLayout.LayoutParams(-2, dp(40))
+        )
+        content.addView(header, matchWrap().apply { bottomMargin = dp(4) })
         content.addView(text(tr("Связь с ручными сценариями Samsung", "Samsung manual routines"), 14f, secondary)
             .also { it.setPadding(0, dp(4), 0, dp(8)) })
-        content.addView(button(if (english) "Русский" else "English") {
-            english = !english
-            preferences.edit().putBoolean("english", english).apply()
-            buildScreen()
-            refreshRoutines(false)
-        }, matchWrap().apply { bottomMargin = dp(8) })
 
         status = text(tr("Загружаю сценарии Samsung…", "Loading Samsung routines…"), 13f, blue)
         status.setPadding(dp(12), dp(12), dp(12), dp(12))
@@ -246,7 +256,7 @@ class MainActivity : Activity() {
                     }
                     details.addView(text(input.label, 16f, white, true))
                     details.addView(
-                        text(input.action.title, 13f, blue)
+                        text(actionTitle(input.action), 13f, blue)
                             .also { it.setPadding(0, dp(4), 0, 0) }
                     )
                     row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
