@@ -1,130 +1,110 @@
 package com.routinebridge
 
 import android.app.Activity
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 
 class MainActivity : Activity() {
 
-    private val routinesPackage = "com.samsung.android.app.routines"
-    private val authority = "com.samsung.android.app.routines.externalprovider"
-
-    private lateinit var output: TextView
-    private var lastReport = ""
+    private lateinit var statusText: TextView
+    private lateinit var routinesOutput: TextView
+    private lateinit var loadButton: Button
     private lateinit var shortcutNameInput: EditText
     private lateinit var shortcutStatus: TextView
-    private lateinit var routinesOutput: TextView
+
+    private val routineRepository by lazy {
+        ManualRoutineRepository()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
+            setPadding(24, 28, 24, 24)
         }
 
-        output = TextView(this).apply {
+        val title = TextView(this).apply {
+            text = "RoutineBridge"
+            textSize = 26f
+        }
+
+        val subtitle = TextView(this).apply {
+            text = "Связь с ручными сценариями Samsung"
             textSize = 14f
-            setTextIsSelectable(true)
-            text = "RoutineBridge 0.1.0\n\nНажми «Проверить систему»."
-        }
-
-        val scroll = ScrollView(this).apply {
-            addView(output)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        }
-
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-
-        val copyButton = Button(this).apply {
-            text = "Копировать"
-            setOnClickListener { copyReport() }
-        }
-
-        val saveButton = Button(this).apply {
-            text = "Сохранить в файл"
-            setOnClickListener { saveReport() }
-        }
-
-        actions.addView(copyButton, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        actions.addView(saveButton, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-
-        val checkButton = Button(this).apply {
-            text = "Проверить систему"
-            setOnClickListener {
-                lastReport = diagnose()
-                output.text = lastReport
-            }
-        }
-
-        val shortcutHeader = TextView(this).apply {
-            text = "ТЕСТ ДИНАМИЧЕСКОГО ЯРЛЫКА"
-            textSize = 16f
+            setPadding(0, 4, 0, 24)
         }
 
         shortcutNameInput = EditText(this).apply {
-            hint = "Название активности"
+            hint = "Название тестового ярлыка"
             setSingleLine(true)
             filters = arrayOf(android.text.InputFilter.LengthFilter(25))
         }
 
         val createShortcutButton = Button(this).apply {
-            text = "Создать / обновить ярлык"
+            text = "Создать / обновить тестовый ярлык"
             setOnClickListener { createTestShortcut() }
         }
 
         shortcutStatus = TextView(this).apply {
+            textSize = 13f
+            text = "Тестовый ярлык ещё не создан."
+            setPadding(0, 4, 0, 20)
+        }
+
+        val sectionTitle = TextView(this).apply {
+            text = "Ручные сценарии Samsung"
+            textSize = 18f
+        }
+
+        statusText = TextView(this).apply {
             textSize = 14f
-            text = "Ярлык ещё не создан и не запускался."
-            setPadding(0, 8, 0, 16)
+            setPadding(0, 12, 0, 12)
+            text = "Список ещё не загружен."
         }
 
-        val routinesHeader = TextView(this).apply {
-            text = "РУЧНЫЕ СЦЕНАРИИ SAMSUNG"
-            textSize = 16f
-            setPadding(0, 16, 0, 4)
-        }
-
-        val loadRoutinesButton = Button(this).apply {
-            text = "Загрузить ручные сценарии"
+        loadButton = Button(this).apply {
+            text = "Загрузить сценарии"
             setOnClickListener { loadManualRoutines() }
         }
 
         routinesOutput = TextView(this).apply {
-            textSize = 14f
+            textSize = 15f
             setTextIsSelectable(true)
-            text = "Список ещё не загружен."
-            setPadding(0, 4, 0, 12)
+            text = ""
+            setPadding(0, 16, 0, 16)
         }
 
-        root.addView(shortcutHeader)
+        val scroll = ScrollView(this).apply {
+            addView(
+                routinesOutput,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        }
+
+        root.addView(title)
+        root.addView(subtitle)
         root.addView(shortcutNameInput)
         root.addView(createShortcutButton)
         root.addView(shortcutStatus)
-        root.addView(routinesHeader)
-        root.addView(loadRoutinesButton)
-        root.addView(routinesOutput)
+        root.addView(sectionTitle)
+        root.addView(statusText)
+        root.addView(loadButton)
         root.addView(scroll)
-        root.addView(actions)
-        root.addView(checkButton)
 
         setContentView(root)
         handleShortcutIntent(intent)
@@ -136,6 +116,54 @@ class MainActivity : Activity() {
         handleShortcutIntent(intent)
     }
 
+    private fun loadManualRoutines() {
+        loadButton.isEnabled = false
+        statusText.text = "Загрузка через Root..."
+        routinesOutput.text = ""
+
+        Thread {
+            try {
+                val routines = routineRepository.load()
+
+                val display = if (routines.isEmpty()) {
+                    "Ручные сценарии не найдены."
+                } else {
+                    routines.joinToString("\n\n") { routine ->
+                        val state = when (routine.isRunning) {
+                            true -> "Включён"
+                            false -> "Выключен"
+                            null -> "Состояние неизвестно"
+                        }
+
+                        val availability = when (routine.isEnabled) {
+                            false -> " · отключён в Samsung"
+                            null -> " · доступность неизвестна"
+                            true -> ""
+                        }
+
+                        "${routine.name}\n" +
+                            "$state$availability\n" +
+                            "UUID: ${routine.uuid}"
+                    }
+                }
+
+                runOnUiThread {
+                    statusText.text =
+                        "Найдено сценариев: ${routines.size}"
+                    routinesOutput.text = display
+                    loadButton.isEnabled = true
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    statusText.text = "Не удалось загрузить сценарии."
+                    routinesOutput.text =
+                        "${e.javaClass.simpleName}: ${e.message}"
+                    loadButton.isEnabled = true
+                }
+            }
+        }.start()
+    }
+
     private fun createTestShortcut() {
         val name = shortcutNameInput.text.toString().trim()
         if (name.isEmpty()) {
@@ -144,190 +172,39 @@ class MainActivity : Activity() {
         }
 
         try {
-            val manager = getSystemService(
-                android.content.pm.ShortcutManager::class.java
-            )
-
             val shortcutIntent = Intent(this, MainActivity::class.java).apply {
                 action = ACTION_TEST_SHORTCUT
                 putExtra(EXTRA_SHORTCUT_NAME, name)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
             }
 
-            val shortcut = android.content.pm.ShortcutInfo.Builder(
-                this,
-                SHORTCUT_ID
+            val published = RoutineShortcutPublisher(this).publish(
+                SHORTCUT_ID,
+                name,
+                shortcutIntent
             )
-                .setShortLabel(name)
-                .setLongLabel(name)
-                .setIcon(
-                    android.graphics.drawable.Icon.createWithResource(
-                        this,
-                        android.R.drawable.ic_menu_view
-                    )
-                )
-                .setIntent(shortcutIntent)
-                .build()
 
-            val added = manager.addDynamicShortcuts(listOf(shortcut))
-
-            shortcutStatus.text = if (added) {
-                "Ярлык опубликован: «$name».\n" +
-                    "Теперь проверь, виден ли он в Samsung Routines."
+            shortcutStatus.text = if (published) {
+                "Ярлык опубликован: «$name»."
             } else {
                 "Android не подтвердил публикацию ярлыка."
             }
         } catch (e: Exception) {
             shortcutStatus.text =
-                "Ошибка создания ярлыка: ${e.javaClass.simpleName}\n${e.message}"
+                "Ошибка создания ярлыка: ${e.javaClass.simpleName}: ${e.message}"
         }
     }
 
     private fun handleShortcutIntent(intent: Intent?) {
         if (intent?.action != ACTION_TEST_SHORTCUT) return
 
-        val name = intent.getStringExtra(EXTRA_SHORTCUT_NAME) ?: "Без названия"
-        val time = java.text.SimpleDateFormat(
-            "HH:mm:ss",
-            java.util.Locale.getDefault()
-        ).format(java.util.Date())
+        val name = intent.getStringExtra(EXTRA_SHORTCUT_NAME)
+            ?: "Без названия"
 
-        shortcutStatus.text =
-            "ЯРЛЫК СРАБОТАЛ!\nНазвание: $name\nВремя: $time"
-    }
-
-    private fun loadManualRoutines() {
-        routinesOutput.text = "Загрузка списка через Root..."
-
-        Thread {
-            try {
-                val uri = "content://$authority/routine_list" +
-                    "?routine_type=normal&condition_type=manual"
-                val command = "content query --uri '$uri'"
-
-                val process = ProcessBuilder("su", "-c", command)
-                    .redirectErrorStream(true)
-                    .start()
-
-                val captured = StringBuilder()
-                val reader = Thread {
-                    process.inputStream.bufferedReader().useLines { lines ->
-                        captured.append(lines.joinToString("\n"))
-                    }
-                }
-                reader.start()
-
-                if (!process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) {
-                    process.destroyForcibly()
-                    reader.join(500)
-                    throw IllegalStateException("Root-команда превысила таймаут 10 секунд")
-                }
-
-                reader.join(1000)
-                val result = captured.toString()
-                val exitCode = process.exitValue()
-
-                if (exitCode != 0) {
-                    throw IllegalStateException(
-                        "Команда завершилась с кодом $exitCode:\n$result"
-                    )
-                }
-
-                val uuidRegex = Regex("""\buuid=(\d+)""")
-                val nameRegex = Regex("""\bname=(.*?), icon_resource_id=""")
-                val runningRegex = Regex("""\bis_running=([01])\b""")
-                val enabledRegex = Regex("""\bis_enabled=([01])\b""")
-
-                val rows = result.lineSequence()
-                    .filter { it.startsWith("Row:") }
-                    .mapNotNull { line ->
-                        val uuid = uuidRegex.find(line)?.groupValues?.get(1)
-                            ?: return@mapNotNull null
-                        val name = nameRegex.find(line)?.groupValues?.get(1)
-                            ?.trim() ?: "Без названия"
-
-                        val running = runningRegex.find(line)?.groupValues?.get(1)
-                        val enabled = enabledRegex.find(line)?.groupValues?.get(1)
-
-                        val state = when (running) {
-                            "1" -> "ВКЛЮЧЁН"
-                            "0" -> "выключен"
-                            else -> "состояние неизвестно"
-                        }
-                        val availability = when (enabled) {
-                            "0" -> " (отключён в Samsung)"
-                            "1" -> ""
-                            else -> " (доступность неизвестна)"
-                        }
-
-                        "• $name — $state$availability\n  UUID: $uuid"
-                    }
-                    .toList()
-
-                val display = when {
-                    rows.isNotEmpty() ->
-                        "Найдено ручных сценариев: ${rows.size}\n\n" +
-                            rows.joinToString("\n\n")
-                    "No result found" in result ->
-                        "Samsung Provider вернул пустой список."
-                    else ->
-                        "Строки сценариев не обнаружены.\n\nОтвет:\n$result"
-                }
-
-                runOnUiThread {
-                    routinesOutput.text = display
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    routinesOutput.text =
-                        "Не удалось загрузить сценарии через Root.\n" +
-                        "${e.javaClass.simpleName}: ${e.message}"
-                }
-            }
-        }.start()
-    }
-
-    private fun copyReport() {
-        if (lastReport.isEmpty()) {
-            Toast.makeText(this, "Сначала запусти проверку", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("RoutineBridge report", lastReport))
-        Toast.makeText(this, "Отчёт скопирован", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun saveReport() {
-        if (lastReport.isEmpty()) {
-            Toast.makeText(this, "Сначала запусти проверку", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TITLE, "RoutineBridge-report.txt")
-        }
-
-        startActivityForResult(intent, 1001)
-    }
-
-    @Deprecated("Deprecated in Android API")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == 1001 && resultCode == RESULT_OK) {
-            val uri: Uri = data?.data ?: return
-            try {
-                contentResolver.openOutputStream(uri)?.use {
-                    it.write(lastReport.toByteArray(Charsets.UTF_8))
-                }
-                Toast.makeText(this, "Отчёт сохранён", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                Toast.makeText(this, "Ошибка сохранения: ${e.message}", Toast.LENGTH_LONG).show()
-            }
-        }
+        shortcutStatus.text = "ЯРЛЫК СРАБОТАЛ! Название: $name"
     }
 
     companion object {
@@ -335,110 +212,5 @@ class MainActivity : Activity() {
         private const val ACTION_TEST_SHORTCUT =
             "com.routinebridge.action.TEST_SHORTCUT"
         private const val EXTRA_SHORTCUT_NAME = "shortcut_name"
-    }
-
-    private fun diagnose(): String {
-        val result = StringBuilder()
-        result.appendLine("RoutineBridge 0.1.0")
-        result.appendLine("Диагностика Samsung Modes and Routines")
-        result.appendLine()
-
-        try {
-            val info = packageManager.getPackageInfo(
-                routinesPackage,
-                PackageManager.GET_ACTIVITIES or
-                    PackageManager.GET_PROVIDERS or
-                    PackageManager.GET_PERMISSIONS
-            )
-
-            result.appendLine("ПАКЕТ: найден")
-            result.appendLine("Версия: ${info.versionName}")
-            result.appendLine("Имя: ${info.packageName}")
-            result.appendLine()
-
-            result.appendLine("ACTIVITY:")
-            val activities = info.activities.orEmpty()
-            if (activities.isEmpty()) {
-                result.appendLine("Список не получен")
-            } else {
-                activities.forEach {
-                    result.appendLine(it.name)
-                    result.appendLine("  exported=${it.exported}")
-                }
-            }
-
-            result.appendLine()
-            result.appendLine("CONTENT PROVIDERS:")
-            val providers = info.providers.orEmpty()
-            if (providers.isEmpty()) {
-                result.appendLine("Список не получен")
-            } else {
-                providers.forEach {
-                    result.appendLine(it.name)
-                    result.appendLine("  authority=${it.authority}")
-                    result.appendLine("  exported=${it.exported}")
-                    result.appendLine("  readPermission=${it.readPermission}")
-                    result.appendLine("  writePermission=${it.writePermission}")
-                }
-            }
-
-            result.appendLine()
-            result.appendLine("РАЗРЕШЕНИЯ ПАКЕТА:")
-            info.requestedPermissions.orEmpty().forEach {
-                result.appendLine(it)
-            }
-
-            result.appendLine()
-            result.appendLine("ПРОВЕРКА ДОСТУПА:")
-            val permission =
-                "com.samsung.android.app.routines.permission.READ_ROUTINE_INFO"
-            val granted = checkSelfPermission(permission) ==
-                PackageManager.PERMISSION_GRANTED
-            result.appendLine("READ_ROUTINE_INFO granted=$granted")
-
-            val modeInfoPermission =
-                "com.samsung.android.app.routines.permission.READ_MODE_INFO"
-            val modeInfoGranted = checkSelfPermission(modeInfoPermission) ==
-                PackageManager.PERMISSION_GRANTED
-
-            result.appendLine("READ_MODE_INFO granted=$modeInfoGranted")
-
-            result.appendLine()
-            result.appendLine("ПРЯМОЙ ВЫЗОВ MODE INFO PROVIDER:")
-
-            try {
-                val modeInfoUri = Uri.parse(
-                    "content://com.samsung.android.app.routines.modeinfoprovider"
-                )
-                val response = contentResolver.call(
-                    modeInfoUri,
-                    "get_mode_list",
-                    null,
-                    Bundle()
-                )
-
-                result.appendLine("Вызов выполнен")
-                result.appendLine("Ответ: ${response ?: "null"}")
-            } catch (e: SecurityException) {
-                result.appendLine("ДОСТУП ЗАПРЕЩЁН: SecurityException")
-                result.appendLine(e.message ?: "")
-            } catch (e: Exception) {
-                result.appendLine("ОШИБКА ВЫЗОВА: ${e.javaClass.simpleName}")
-                result.appendLine(e.message ?: "")
-            }
-
-            result.appendLine()
-            result.appendLine("Provider authority:")
-            result.appendLine(authority)
-            result.appendLine("Сам факт обнаружения не означает доступность чтения.")
-
-        } catch (e: PackageManager.NameNotFoundException) {
-            result.appendLine("ПАКЕТ НЕ НАЙДЕН")
-        } catch (e: Exception) {
-            result.appendLine("ОШИБКА: ${e.javaClass.simpleName}")
-            result.appendLine(e.message ?: "")
-        }
-
-        return result.toString()
     }
 }
