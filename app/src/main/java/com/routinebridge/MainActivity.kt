@@ -1,113 +1,57 @@
 package com.routinebridge
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
+import java.util.UUID
 
 class MainActivity : Activity() {
+    private val store by lazy { RoutineInputStore(this) }
+    private val repository by lazy { ManualRoutineRepository() }
+    private var inputs = emptyList<RoutineInput>()
+    private var routines = emptyList<ManualRoutine>()
+    private lateinit var content: LinearLayout
+    private lateinit var status: TextView
+    private lateinit var addButton: Button
+    private lateinit var inputContainer: LinearLayout
+    private var busy = false
 
-    private lateinit var statusText: TextView
-    private lateinit var routinesOutput: TextView
-    private lateinit var loadButton: Button
-    private lateinit var shortcutNameInput: EditText
-    private lateinit var shortcutStatus: TextView
-
-    private val routineRepository by lazy {
-        ManualRoutineRepository()
-    }
+    private val bg = Color.rgb(18, 18, 18)
+    private val surface = Color.rgb(30, 30, 30)
+    private val variant = Color.rgb(25, 31, 45)
+    private val blue = Color.rgb(74, 144, 217)
+    private val white = Color.WHITE
+    private val secondary = Color.rgb(208, 214, 226)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 28, 24, 24)
+        window.statusBarColor = bg
+        window.navigationBarColor = bg
+        if (Build.VERSION.SDK_INT >= 29) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
         }
+        window.decorView.systemUiVisibility = 0
 
-        val title = TextView(this).apply {
-            text = "RoutineBridge"
-            textSize = 26f
-        }
-
-        val subtitle = TextView(this).apply {
-            text = "Связь с ручными сценариями Samsung"
-            textSize = 14f
-            setPadding(0, 4, 0, 24)
-        }
-
-        shortcutNameInput = EditText(this).apply {
-            hint = "Название тестового ярлыка"
-            setSingleLine(true)
-            filters = arrayOf(android.text.InputFilter.LengthFilter(25))
-        }
-
-        val createShortcutButton = Button(this).apply {
-            text = "Создать / обновить тестовый ярлык"
-            setOnClickListener { createTestShortcut() }
-        }
-
-        shortcutStatus = TextView(this).apply {
-            textSize = 13f
-            text = "Тестовый ярлык ещё не создан."
-            setPadding(0, 4, 0, 20)
-        }
-
-        val sectionTitle = TextView(this).apply {
-            text = "Ручные сценарии Samsung"
-            textSize = 18f
-        }
-
-        statusText = TextView(this).apply {
-            textSize = 14f
-            setPadding(0, 12, 0, 12)
-            text = "Список ещё не загружен."
-        }
-
-        loadButton = Button(this).apply {
-            text = "Загрузить сценарии"
-            setOnClickListener { loadManualRoutines() }
-        }
-
-        routinesOutput = TextView(this).apply {
-            textSize = 15f
-            setTextIsSelectable(true)
-            text = ""
-            setPadding(0, 16, 0, 16)
-        }
-
-        val scroll = ScrollView(this).apply {
-            addView(
-                routinesOutput,
-                ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-            )
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        }
-
-        root.addView(title)
-        root.addView(subtitle)
-        root.addView(shortcutNameInput)
-        root.addView(createShortcutButton)
-        root.addView(shortcutStatus)
-        root.addView(sectionTitle)
-        root.addView(statusText)
-        root.addView(loadButton)
-        root.addView(scroll)
-
-        setContentView(root)
+        inputs = store.load()
+        buildScreen()
         handleShortcutIntent(intent)
+        refreshRoutines(false)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -116,101 +60,268 @@ class MainActivity : Activity() {
         handleShortcutIntent(intent)
     }
 
-    private fun loadManualRoutines() {
-        loadButton.isEnabled = false
-        statusText.text = "Загрузка через Root..."
-        routinesOutput.text = ""
+    private fun buildScreen() {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bg)
+        }
+        root.setPadding(dp(20), dp(16), dp(20), dp(16))
+        root.setOnApplyWindowInsetsListener { view, insets ->
+            val bars = if (Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(WindowInsets.Type.systemBars())
+            } else {
+                @Suppress("DEPRECATION")
+                android.graphics.Insets.of(
+                    insets.systemWindowInsetLeft,
+                    insets.systemWindowInsetTop,
+                    insets.systemWindowInsetRight,
+                    insets.systemWindowInsetBottom
+                )
+            }
+            view.setPadding(dp(20) + bars.left, dp(16) + bars.top,
+                dp(20) + bars.right, dp(16) + bars.bottom)
+            insets
+        }
 
+        val scroll = ScrollView(this)
+        content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        scroll.addView(content)
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val title = text("RoutineBridge", 28f, white, true)
+        content.addView(title)
+        content.addView(text("Связь с ручными сценариями Samsung", 14f, secondary)
+            .also { it.setPadding(0, dp(4), 0, dp(22)) })
+
+        status = text("Загружаю сценарии Samsung…", 13f, secondary)
+        content.addView(status)
+
+        addButton = button("＋  Добавить вход") { openEditor(null) }
+        content.addView(addButton, matchWrap())
+        content.addView(button("Обновить список сценариев") { refreshRoutines(true) }, matchWrap())
+
+        content.addView(text("Мои входы", 19f, white, true)
+            .also { it.setPadding(0, dp(22), 0, dp(10)) })
+        inputContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        content.addView(inputContainer, matchWrap())
+        renderInputs()
+        setContentView(root)
+        root.requestApplyInsets()
+    }
+
+    private fun renderInputs() {
+        inputContainer.removeAllViews()
+
+        if (inputs.isEmpty()) {
+            inputContainer.addView(text(
+                "Пока нет входов.\\nДобавь вход, выбери ручной сценарий Samsung и действие.",
+                14f, secondary
+            ).apply {
+                setPadding(dp(14), dp(18), dp(14), dp(18))
+                background = rounded(variant, 12)
+            }, matchWrap())
+            return
+        }
+
+        inputs.forEach { input ->
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = rounded(surface, 14)
+            }
+            card.addView(text(input.label, 17f, white, true))
+            card.addView(text(input.routineName, 14f, secondary)
+                .also { it.setPadding(0, dp(5), 0, dp(2)) })
+            card.addView(text(input.action.title, 13f, blue))
+
+            val actions = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+            }
+            actions.addView(button("Изменить") { openEditor(input) },
+                LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                    marginEnd = dp(6)
+                })
+            actions.addView(button("Удалить") { confirmDelete(input) },
+                LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                    marginStart = dp(6)
+                })
+            card.addView(actions)
+
+            inputContainer.addView(card, matchWrap().apply {
+                topMargin = dp(8)
+                bottomMargin = dp(4)
+            })
+        }
+    }
+
+    private fun refreshRoutines(showMessage: Boolean) {
+        status.text = "Загрузка ручных сценариев через Root…"
         Thread {
             try {
-                val routines = routineRepository.load()
-
-                val display = if (routines.isEmpty()) {
-                    "Ручные сценарии не найдены."
-                } else {
-                    routines.joinToString("\n\n") { routine ->
-                        val state = when (routine.isRunning) {
-                            true -> "Включён"
-                            false -> "Выключен"
-                            null -> "Состояние неизвестно"
-                        }
-
-                        val availability = when (routine.isEnabled) {
-                            false -> " · отключён в Samsung"
-                            null -> " · доступность неизвестна"
-                            true -> ""
-                        }
-
-                        "${routine.name}\n" +
-                            "$state$availability\n" +
-                            "UUID: ${routine.uuid}"
-                    }
-                }
-
+                val loaded = repository.load()
                 runOnUiThread {
-                    statusText.text =
-                        "Найдено сценариев: ${routines.size}"
-                    routinesOutput.text = display
-                    loadButton.isEnabled = true
+                    routines = loaded
+                    status.text = "Найдено ручных сценариев: ${loaded.size}"
+                    if (showMessage) renderInputs()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    statusText.text = "Не удалось загрузить сценарии."
-                    routinesOutput.text =
-                        "${e.javaClass.simpleName}: ${e.message}"
-                    loadButton.isEnabled = true
+                    status.text = "Ошибка загрузки: ${e.message}"
                 }
             }
         }.start()
     }
 
-    private fun createTestShortcut() {
-        val name = shortcutNameInput.text.toString().trim()
-        if (name.isEmpty()) {
-            shortcutStatus.text = "Сначала введи название ярлыка."
+    private fun openEditor(existing: RoutineInput?) {
+        if (routines.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setMessage("Сначала дождись загрузки ручных сценариев Samsung.")
+                .setPositiveButton("Обновить") { _, _ -> refreshRoutines(true) }
+                .setNegativeButton("Закрыть", null)
+                .show()
             return
         }
 
-        try {
-            val shortcutIntent = Intent(this, MainActivity::class.java).apply {
-                action = ACTION_TEST_SHORTCUT
-                putExtra(EXTRA_SHORTCUT_NAME, name)
-                addFlags(
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(12), dp(22), 0)
+        }
+        val name = EditText(this).apply {
+            hint = "Название входа"
+            setSingleLine(true)
+            setText(existing?.label ?: "")
+        }
+        form.addView(text("Название входа", 14f, secondary))
+        form.addView(name, matchWrap())
+
+        val routineSpinner = Spinner(this)
+        val routineLabels = routines.map { it.name }
+        routineSpinner.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, routineLabels
+        )
+        val selectedRoutine = routines.indexOfFirst { it.uuid == existing?.routineUuid }
+        if (selectedRoutine >= 0) routineSpinner.setSelection(selectedRoutine)
+        form.addView(text("Ручной сценарий Samsung", 14f, secondary)
+            .also { it.setPadding(0, dp(12), 0, 0) })
+        form.addView(routineSpinner, matchWrap())
+
+        val actionSpinner = Spinner(this)
+        val actionValues = RoutineInputAction.entries
+        actionSpinner.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item,
+            actionValues.map { it.title }
+        )
+        actionSpinner.setSelection(actionValues.indexOf(existing?.action)
+            .takeIf { it >= 0 } ?: 2)
+        form.addView(text("Действие", 14f, secondary)
+            .also { it.setPadding(0, dp(12), 0, 0) })
+        form.addView(actionSpinner, matchWrap())
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(if (existing == null) "Новый вход" else "Изменить вход")
+            .setView(form)
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Сохранить", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val label = name.text.toString().trim()
+                if (label.isEmpty()) {
+                    name.error = "Введи название"
+                    return@setOnClickListener
+                }
+                val routine = routines[routineSpinner.selectedItemPosition]
+                val item = RoutineInput(
+                    id = existing?.id ?: UUID.randomUUID().toString(),
+                    label = label,
+                    routineUuid = routine.uuid,
+                    routineName = routine.name,
+                    action = actionValues[actionSpinner.selectedItemPosition]
                 )
+                val updated = inputs.filterNot { it.id == item.id } + item
+                persist(updated)
+                dialog.dismiss()
             }
+        }
+        dialog.show()
+    }
 
-            val published = RoutineShortcutPublisher(this).publish(
-                SHORTCUT_ID,
-                name,
-                shortcutIntent
-            )
-
-            shortcutStatus.text = if (published) {
-                "Ярлык опубликован: «$name»."
-            } else {
-                "Android не подтвердил публикацию ярлыка."
+    private fun confirmDelete(input: RoutineInput) {
+        AlertDialog.Builder(this)
+            .setTitle("Удалить вход?")
+            .setMessage("«${input.label}» и его ярлык будут удалены.")
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Удалить") { _, _ ->
+                persist(inputs.filterNot { it.id == input.id })
             }
+            .show()
+    }
+
+    private fun persist(updated: List<RoutineInput>) {
+        try {
+            store.save(updated)
+            RoutineShortcutPublisher(this).publishAll(updated)
+            inputs = updated
+            status.text = "Настройки сохранены. Ярлыков: ${inputs.size}"
+            renderInputs()
         } catch (e: Exception) {
-            shortcutStatus.text =
-                "Ошибка создания ярлыка: ${e.javaClass.simpleName}: ${e.message}"
+            status.text = "Ошибка сохранения: ${e.message}"
         }
     }
 
     private fun handleShortcutIntent(intent: Intent?) {
-        if (intent?.action != ACTION_TEST_SHORTCUT) return
-
-        val name = intent.getStringExtra(EXTRA_SHORTCUT_NAME)
-            ?: "Без названия"
-
-        shortcutStatus.text = "ЯРЛЫК СРАБОТАЛ! Название: $name"
+        if (intent?.action != ACTION_RUN_INPUT || busy) return
+        val id = intent.getStringExtra(EXTRA_INPUT_ID) ?: return
+        val input = inputs.firstOrNull { it.id == id } ?: run {
+            status.text = "Вход не найден. Открой приложение и обнови ярлыки."
+            return
+        }
+        busy = true
+        status.text = "Выполняю: ${input.label}…"
+        Thread {
+            try {
+                val result = RoutineActionExecutor(repository).execute(input)
+                runOnUiThread { status.text = result; busy = false }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    status.text = "Не удалось выполнить «${input.label}»: ${e.message}"
+                    busy = false
+                }
+            }
+        }.start()
     }
 
+    private fun text(value: String, size: Float, color: Int, bold: Boolean = false) =
+        TextView(this).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+            if (bold) setTypeface(typeface, Typeface.BOLD)
+        }
+
+    private fun button(label: String, action: () -> Unit) =
+        Button(this).apply {
+            text = label
+            setTextColor(white)
+            setOnClickListener { action() }
+        }
+
+    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = dp(radius).toFloat()
+    }
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    private fun matchWrap() = LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT)
+
     companion object {
-        private const val SHORTCUT_ID = "routinebridge_test_entry"
-        private const val ACTION_TEST_SHORTCUT =
-            "com.routinebridge.action.TEST_SHORTCUT"
-        private const val EXTRA_SHORTCUT_NAME = "shortcut_name"
+        const val ACTION_RUN_INPUT = "com.routinebridge.action.RUN_INPUT"
+        const val EXTRA_INPUT_ID = "routine_input_id"
     }
 }
