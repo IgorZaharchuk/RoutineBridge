@@ -36,7 +36,7 @@ class MainActivity : Activity() {
 
     private val bg = Color.rgb(18, 18, 18)
     private val surface = Color.rgb(30, 30, 30)
-    private val variant = Color.rgb(25, 31, 45)
+    private val variant = Color.rgb(48, 64, 86)
     private val blue = Color.rgb(74, 144, 217)
     private val white = Color.WHITE
     private val secondary = Color.rgb(208, 214, 226)
@@ -400,8 +400,21 @@ class MainActivity : Activity() {
 
         dialog.setOnShowListener {
             dialog.window?.setBackgroundDrawable(rounded(surface, 16))
-            styleButton(dialog.getButton(AlertDialog.BUTTON_NEGATIVE))
-            styleButton(dialog.getButton(AlertDialog.BUTTON_POSITIVE))
+            val cancelButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
+            val saveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            styleButton(cancelButton)
+            styleButton(saveButton)
+
+            (cancelButton.layoutParams as? LinearLayout.LayoutParams)?.let {
+                it.marginStart = dp(8)
+                it.marginEnd = dp(6)
+                cancelButton.layoutParams = it
+            }
+            (saveButton.layoutParams as? LinearLayout.LayoutParams)?.let {
+                it.marginStart = dp(6)
+                it.marginEnd = dp(8)
+                saveButton.layoutParams = it
+            }
 
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val label = name.text.toString().trim()
