@@ -67,15 +67,6 @@ class RoutineActionExecutor(
         val output = runRoot(command)
         Log.i(LOG_TAG, "SAMSUNG_RETURN request=$requestId output=${output.take(500)}")
 
-        if (output.contains("Error:", true) || output.contains("Exception", true)) {
-            throw IllegalStateException(
-                message(
-                    "Samsung вернул ошибку:\n$output",
-                    "Samsung returned an error:\n$output"
-                )
-            )
-        }
-
         Thread.sleep(900)
 
         val updated = repository.load().firstOrNull {
