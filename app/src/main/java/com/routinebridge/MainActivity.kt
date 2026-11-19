@@ -96,7 +96,7 @@ class MainActivity : Activity() {
         val title = text("RoutineBridge", 20f, white, true)
         content.addView(title)
         content.addView(text("Связь с ручными сценариями Samsung", 14f, secondary)
-            .also { it.setPadding(0, dp(4), 0, dp(22)) })
+            .also { it.setPadding(0, dp(4), 0, dp(8)) })
 
         status = text("Загружаю сценарии Samsung…", 13f, secondary)
         content.addView(status)
@@ -106,7 +106,7 @@ class MainActivity : Activity() {
         content.addView(button("Обновить список сценариев") { refreshRoutines(true) }, matchWrap().apply { bottomMargin = dp(8) })
 
         content.addView(text("Мои входы", 19f, white, true)
-            .also { it.setPadding(0, dp(22), 0, dp(10)) })
+            .also { it.setPadding(0, dp(8), 0, dp(10)) })
         inputContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -114,7 +114,7 @@ class MainActivity : Activity() {
 
         val appVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: "—"
         content.addView(
-            text("github.com/IgorZaharchuk/RoutineBridge\\nВерсия $appVersion", 12f, secondary)
+            text("github.com/IgorZaharchuk/RoutineBridge\nВерсия $appVersion", 12f, secondary)
                 .also { it.setPadding(0, dp(24), 0, dp(8)) }
         )
         renderInputs()
@@ -399,6 +399,10 @@ class MainActivity : Activity() {
             .create()
 
         dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(rounded(surface, 16))
+            styleButton(dialog.getButton(AlertDialog.BUTTON_NEGATIVE))
+            styleButton(dialog.getButton(AlertDialog.BUTTON_POSITIVE))
+
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val label = name.text.toString().trim()
                 if (label.isEmpty()) {
@@ -491,17 +495,23 @@ class MainActivity : Activity() {
             if (bold) setTypeface(typeface, Typeface.BOLD)
         }
 
+    private fun styleButton(button: Button) {
+        button.isAllCaps = false
+        button.setTextColor(white)
+        button.textSize = 13f
+        button.typeface = Typeface.DEFAULT_BOLD
+        button.gravity = android.view.Gravity.CENTER
+        button.background = rounded(variant, 8)
+        button.stateListAnimator = null
+        button.elevation = 0f
+        button.minimumWidth = 0
+        button.setPadding(dp(4), 0, dp(4), 0)
+    }
+
     private fun button(label: String, action: () -> Unit) =
         Button(this).apply {
             text = label
-            isAllCaps = false
-            setTextColor(android.graphics.Color.WHITE)
-            textSize = 14f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            gravity = android.view.Gravity.CENTER
-            background = rounded(variant, 8)
-            stateListAnimator = null
-            elevation = 0f
+            styleButton(this)
             setOnClickListener { action() }
         }
 
