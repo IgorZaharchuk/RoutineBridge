@@ -93,7 +93,7 @@ class MainActivity : Activity() {
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        val title = text("RoutineBridge", 28f, white, true)
+        val title = text("RoutineBridge", 20f, white, true)
         content.addView(title)
         content.addView(text("Связь с ручными сценариями Samsung", 14f, secondary)
             .also { it.setPadding(0, dp(4), 0, dp(22)) })
@@ -111,6 +111,12 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
         }
         content.addView(inputContainer, matchWrap())
+
+        val appVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: "—"
+        content.addView(
+            text("github.com/IgorZaharchuk/RoutineBridge\\nВерсия $appVersion", 12f, secondary)
+                .also { it.setPadding(0, dp(24), 0, dp(8)) }
+        )
         renderInputs()
         setContentView(root)
         root.requestApplyInsets()
@@ -479,7 +485,14 @@ class MainActivity : Activity() {
     private fun button(label: String, action: () -> Unit) =
         Button(this).apply {
             text = label
-            setTextColor(white)
+            isAllCaps = false
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 14f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = android.view.Gravity.CENTER
+            background = rounded(android.graphics.Color.rgb(48, 52, 59), 24)
+            stateListAnimator = null
+            elevation = 0f
             setOnClickListener { action() }
         }
 
