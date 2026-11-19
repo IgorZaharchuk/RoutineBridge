@@ -13,7 +13,7 @@ class ManualRoutineRepository {
 
         val result = RootCommand.execute(command, 10)
 
-        val uuidRegex = Regex("""\buuid=(\d+)""")
+        val uuidRegex = Regex("""\buuid=(-?\d+)""")
         val nameRegex = Regex("""\bname=(.*?), icon_resource_id=""")
         val runningRegex = Regex("""\bis_running=([01])\b""")
         val enabledRegex = Regex("""\bis_enabled=([01])\b""")
@@ -25,16 +25,22 @@ class ManualRoutineRepository {
                     ?.groupValues?.get(1)?.toLongOrNull()
                     ?: return@mapNotNull null
 
-                val name = nameRegex.find(line)
-                    ?.groupValues?.get(1)?.trim()
-                    ?.takeIf { it.isNotEmpty() }
-                    ?: "Без названия"
+                val nameMatch = nameRegex.find(line)
+                    ?: return@mapNotNull null
 
-                val running = runningRegex.find(line)
+                val name = nameMatch.groupValues[1]
+                    .trim()
+                    .takeIf { it.isNotEmpty() }
+                    ?: return@mapNotNull null
+
+                // Не позволяем тексту имени подменять поля состояния.
+                val metadata = line.removeRange(nameMatch.range)
+
+                val running = runningRegex.find(metadata)
                     ?.groupValues?.get(1)
                     ?.let { it == "1" }
 
-                val enabled = enabledRegex.find(line)
+                val enabled = enabledRegex.find(metadata)
                     ?.groupValues?.get(1)
                     ?.let { it == "1" }
 

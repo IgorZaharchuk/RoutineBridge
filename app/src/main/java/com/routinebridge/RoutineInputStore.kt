@@ -12,8 +12,8 @@ class RoutineInputStore(context: Context) {
         return buildList {
             for (i in 0 until array.length()) {
                 val item = array.optJSONObject(i) ?: continue
-                val uuid = item.optLong("routineUuid", -1L)
-                if (uuid <= 0L) continue
+                if (!item.has("routineUuid") || item.isNull("routineUuid")) continue
+                val uuid = item.optLong("routineUuid")
                 val action = runCatching {
                     RoutineInputAction.valueOf(item.optString("action"))
                 }.getOrDefault(RoutineInputAction.TOGGLE)
