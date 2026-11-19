@@ -9,6 +9,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.util.Log
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.widget.ArrayAdapter
@@ -275,19 +276,35 @@ class MainActivity : Activity() {
     }
 
     private fun handleShortcutIntent(intent: Intent?) {
-        if (intent?.action != ACTION_RUN_INPUT || busy) return
+        if (intent?.action != ACTION_RUN_INPUT) return
         val id = intent.getStringExtra(EXTRA_INPUT_ID) ?: return
+        val requestId = UUID.randomUUID().toString().take(8)
+        val source = if (Build.VERSION.SDK_INT >= 22) referrer?.toString() else null
+
+        Log.i(LOG_TAG, "SHORTCUT_RECEIVED request=$requestId input=$id busy=$busy referrer=$source flags=${intent.flags}")
+
+        if (busy) {
+            Log.w(LOG_TAG, "SHORTCUT_IGNORED request=$requestId reason=busy")
+            return
+        }
+
         val input = inputs.firstOrNull { it.id == id } ?: run {
+            Log.e(LOG_TAG, "SHORTCUT_ERROR request=$requestId reason=input_not_found")
             status.text = "Вход не найден. Открой приложение и обнови ярлыки."
             return
         }
+
         busy = true
+        Log.i(LOG_TAG, "SHORTCUT_ACCEPTED request=$requestId label=${input.label} action=${input.action} routineUuid=${input.routineUuid}")
         status.text = "Выполняю: ${input.label}…"
+
         Thread {
             try {
-                val result = RoutineActionExecutor(repository).execute(input)
+                val result = RoutineActionExecutor(repository).execute(input, requestId)
+                Log.i(LOG_TAG, "SHORTCUT_FINISHED request=$requestId result=$result")
                 runOnUiThread { status.text = result; busy = false }
             } catch (e: Exception) {
+                Log.e(LOG_TAG, "SHORTCUT_FAILED request=$requestId error=${e.message}", e)
                 runOnUiThread {
                     status.text = "Не удалось выполнить «${input.label}»: ${e.message}"
                     busy = false
