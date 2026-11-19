@@ -16,7 +16,7 @@ class RoutineShortcutPublisher(private val context: Context) {
         }
 
         val shortcuts = inputs.map { input ->
-            val intent = Intent(context, MainActivity::class.java).apply {
+            val intent = Intent(context, ShortcutRunActivity::class.java).apply {
                 action = MainActivity.ACTION_RUN_INPUT
                 putExtra(MainActivity.EXTRA_INPUT_ID, input.id)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
