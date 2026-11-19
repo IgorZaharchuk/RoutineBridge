@@ -1,11 +1,14 @@
 package com.routinebridge
 
+import android.util.Log
+
 import java.util.concurrent.TimeUnit
 
 class RoutineActionExecutor(
     private val repository: ManualRoutineRepository = ManualRoutineRepository()
 ) {
-    fun execute(input: RoutineInput, requestId: String): String {\n        Log.i(LOG_TAG, "EXEC_START request=$requestId input=${input.id} action=${input.action} uuid=${input.routineUuid}")
+    fun execute(input: RoutineInput, requestId: String): String {
+        Log.i(LOG_TAG, "EXEC_START request=$requestId input=${input.id} action=${input.action} uuid=${input.routineUuid}")
         val routine = repository.load().firstOrNull { it.uuid == input.routineUuid }
             ?: throw IllegalStateException("Сценарий «${input.routineName}» не найден")
 
@@ -31,14 +34,16 @@ class RoutineActionExecutor(
             "--es EXTRA_KEY_ROUTINE_NAME ${quote(routine.name)} " +
             "--el EXTRA_KEY_ROUTINE_UUID ${routine.uuid} -f 0x10008000"
 
-        Log.i(LOG_TAG, "SAMSUNG_LAUNCH request=$requestId")\n        val output = runRoot(command)\n        Log.i(LOG_TAG, "SAMSUNG_RETURN request=$requestId output=${output.take(500)}")
+        Log.i(LOG_TAG, "SAMSUNG_LAUNCH request=$requestId")
+        val output = runRoot(command)\n        Log.i(LOG_TAG, "SAMSUNG_RETURN request=$requestId output=${output.take(500)}")
         if (output.contains("Error:", true) || output.contains("Exception", true)) {
             throw IllegalStateException("Samsung вернул ошибку:\n$output")
         }
 
         Thread.sleep(900)
         val updated = repository.load().firstOrNull { it.uuid == routine.uuid }
-        Log.i(LOG_TAG, "STATE_AFTER request=$requestId expected=$target actual=${updated?.isRunning}")\n        if (updated?.isRunning != target) {
+        Log.i(LOG_TAG, "STATE_AFTER request=$requestId expected=$target actual=${updated?.isRunning}")
+        if (updated?.isRunning != target) {
             throw IllegalStateException(
                 "Новое состояние сценария не подтверждено. Ответ: $output"
             )
@@ -69,5 +74,9 @@ class RoutineActionExecutor(
         return output.toString()
     }
 
-    private companion object {\n        const val LOG_TAG = "RoutineBridge"\n    }\n\n    private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
+    private companion object {
+        const val LOG_TAG = "RoutineBridge"
+    }
+
+    private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 }

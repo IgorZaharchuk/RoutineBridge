@@ -338,6 +338,7 @@ class MainActivity : Activity() {
     private fun matchWrap() = LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT)
 
     companion object {
+        private const val LOG_TAG = "RoutineBridge"
         const val ACTION_RUN_INPUT = "com.routinebridge.action.RUN_INPUT"
         const val EXTRA_INPUT_ID = "routine_input_id"
     }
