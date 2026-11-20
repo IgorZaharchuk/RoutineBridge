@@ -130,8 +130,7 @@ class RootCoreDiagnosticsActivity : Activity() {
                 AlertDialog.Builder(this)
                     .setTitle("Запустить Samsung-сценарий?")
                     .setMessage(
-                        "Сценарий $id будет действительно запущен. " +
-                            "Android может заблокировать запуск Activity из root-процесса."
+                        "Сценарий $id будет запущен через системную команду am."
                     )
                     .setNegativeButton("Отмена", null)
                     .setPositiveButton("Запустить") { _, _ ->
@@ -148,8 +147,8 @@ class RootCoreDiagnosticsActivity : Activity() {
                                 extras,
                                 0x10008000
                             )
-                            "Вызов startActivity принят без исключения. " +
-                                "Фактический запуск сценария нужно проверить на устройстве."
+                            "Команда am start завершилась с кодом 0. " +
+                                "Проверь фактическое выполнение сценария на устройстве."
                         }
                     }
                     .show()
