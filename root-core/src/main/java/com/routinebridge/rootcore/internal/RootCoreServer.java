@@ -25,8 +25,8 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
 
     private IBinder clientToken;
     private IBinder.DeathRecipient deathRecipient;
-    private boolean connected;
-    private boolean closed;
+    private volatile boolean connected;
+    private volatile boolean closed;
 
     private final Runnable idleShutdown = this::shutdown;
 
@@ -66,6 +66,10 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
     @Override
     public synchronized void connect(IBinder client) throws RemoteException {
         enforceClient();
+
+        if (closed) {
+            throw new RemoteException("Root Core session is already closed");
+        }
 
         if (client == null || !client.isBinderAlive()) {
             throw new RemoteException("Client token is not alive");
@@ -121,9 +125,6 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
     private void onClientDied() {
         handler.post(() -> {
             android.util.Log.w(TAG, "Client Binder died");
-            connected = false;
-            clientToken = null;
-            deathRecipient = null;
             shutdown();
         });
     }
