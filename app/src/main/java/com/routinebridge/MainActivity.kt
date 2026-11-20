@@ -29,6 +29,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var inputContainer: LinearLayout
     private var english = false
+    private var shortcutPublishFailed = false
     private val preferences by lazy {
         getSharedPreferences("settings", MODE_PRIVATE)
     }
@@ -83,6 +84,9 @@ class MainActivity : Activity() {
         inputs = store.load()
         english = preferences.getBoolean("english", false)
         buildScreen()
+        shortcutPublishFailed = runCatching {
+            !RoutineShortcutPublisher(this).publishAll(inputs)
+        }.getOrDefault(true)
         refreshRoutines(false)
     }
 
@@ -394,7 +398,18 @@ class MainActivity : Activity() {
                 val loaded = repository.load()
                 runOnUiThread {
                     routines = loaded
-                    setStatus(tr("Найдено ручных сценариев: ${loaded.size}", "Manual routines found: ${loaded.size}"))
+                    val loadedMessage = tr(
+                        "Найдено ручных сценариев: ${loaded.size}",
+                        "Manual routines found: ${loaded.size}"
+                    )
+                    setStatus(
+                        if (shortcutPublishFailed)
+                            "$loadedMessage. " + tr(
+                                "Ошибка обновления ярлыков.",
+                                "Shortcut update failed."
+                            )
+                        else loadedMessage
+                    )
                     renderInputs()
                 }
             } catch (e: Exception) {
@@ -523,17 +538,32 @@ class MainActivity : Activity() {
                 .map { it.id }
 
             store.save(updated)
-            RoutineShortcutPublisher(this).publishAll(
-                updated,
-                removedInputIds,
-                tr(
-                    "Этот вход удалён в RoutineBridge.",
-                    "This input was deleted in RoutineBridge."
-                )
-            )
             inputs = updated
+
+            val shortcutsUpdated = runCatching {
+                RoutineShortcutPublisher(this).publishAll(
+                    updated,
+                    removedInputIds,
+                    tr(
+                        "Этот вход удалён в RoutineBridge.",
+                        "This input was deleted in RoutineBridge."
+                    )
+                )
+            }.getOrDefault(false)
+
+            shortcutPublishFailed = !shortcutsUpdated
             editingInputId = null
-            status.text = tr("Настройки сохранены. Ярлыков: ${inputs.size}", "Settings saved. Shortcuts: ${inputs.size}")
+            status.text = if (shortcutsUpdated) {
+                tr(
+                    "Настройки сохранены. Ярлыков: ${inputs.size}",
+                    "Settings saved. Shortcuts: ${inputs.size}"
+                )
+            } else {
+                tr(
+                    "Настройки сохранены, но ошибка обновления ярлыков.",
+                    "Settings saved, but shortcut update failed."
+                )
+            }
             renderInputs()
         } catch (e: Exception) {
             status.text = if (e is RootAccessException)
