@@ -22,7 +22,7 @@ import java.util.UUID
 
 class MainActivity : Activity() {
     private val store by lazy { RoutineInputStore(this) }
-    private val repository by lazy { ManualRoutineRepository() }
+    private val repository by lazy { ManualRoutineRepository(applicationContext) }
     private var inputs = emptyList<RoutineInput>()
     private var routines = emptyList<ManualRoutine>()
     private lateinit var content: LinearLayout
@@ -450,7 +450,7 @@ class MainActivity : Activity() {
 
     private fun refreshRoutines() {
         val requestId = ++refreshRequestId
-        setStatus(tr("Загрузка ручных сценариев через Root…", "Loading routines through Root…"))
+        setStatus(tr("Загрузка ручных сценариев через Root Core…", "Loading routines through Root Core…"))
         Thread {
             try {
                 val loaded = repository.load()
@@ -485,7 +485,7 @@ class MainActivity : Activity() {
                                 "Ошибка загрузки настроек: $inputLoadError. Исходные данные сохранены.",
                                 "Settings load error: $inputLoadError. Original data was preserved."
                             )
-                        else if (e is RootAccessException)
+                        else if (e is RootCoreAccessException)
                             tr("Root-доступ недоступен.", "Root access unavailable.")
                         else
                             tr("Ошибка загрузки: ${e.message}", "Loading error: ${e.message}")
@@ -653,7 +653,7 @@ class MainActivity : Activity() {
             true
         } catch (e: Exception) {
             setStatus(
-                if (e is RootAccessException)
+                if (e is RootCoreAccessException)
                     tr("Root-доступ недоступен.", "Root access unavailable.")
                 else
                     tr("Ошибка сохранения: ${e.message}", "Save error: ${e.message}")

@@ -1,72 +1,83 @@
 package com.routinebridge
 
+import android.content.Context
+import android.net.Uri
+import android.os.Bundle
+import com.routinebridge.rootcore.RootCoreSession
 
-class ManualRoutineRepository {
-
-    private val authority =
-        "com.samsung.android.app.routines.externalprovider"
+class ManualRoutineRepository(
+    private val context: Context
+) {
+    private val providerUri = Uri.parse(
+        "content://com.samsung.android.app.routines.externalprovider/" +
+            "routine_list?routine_type=normal&condition_type=manual"
+    )
 
     fun load(): List<ManualRoutine> {
-        val uri = "content://$authority/routine_list" +
-            "?routine_type=normal&condition_type=manual"
-        val command = "content query --uri '$uri'"
+        val session = RootCoreAccess.open(context)
+        return try {
+            load(session)
+        } finally {
+            RootCoreAccess.close(session)
+        }
+    }
 
-        val result = RootCommand.execute(command, 10)
+    fun load(session: RootCoreSession): List<ManualRoutine> {
+        val result = session.queryProvider(providerUri, null)
 
-        val uuidRegex = Regex("""\buuid=(-?\d+)""")
-        val nameRegex = Regex("""\bname=(.*?), icon_resource_id=""")
-        val runningRegex = Regex("""\bis_running=([01])\b""")
-        val enabledRegex = Regex("""\bis_enabled=([01])\b""")
-
-        val rowLines = result.lineSequence()
-            .filter { it.startsWith("Row:") }
-            .toList()
-
-        if (rowLines.isEmpty()) {
-            if ("No result found" in result) return emptyList()
-
-            throw IllegalStateException(
-                "Не удалось разобрать ответ Samsung Provider:\n$result"
+        val columns = result.getStringArray("columns")
+            ?: throw IllegalStateException(
+                "Samsung Provider не вернул список столбцов"
             )
+
+        @Suppress("DEPRECATION")
+        val rows = result.getParcelableArrayList<Bundle>("rows")
+            ?: throw IllegalStateException(
+                "Samsung Provider не вернул строки"
+            )
+
+        val uuidIndex = columns.indexOf("uuid")
+        val nameIndex = columns.indexOf("name")
+        val runningIndex = columns.indexOf("is_running")
+        val enabledIndex = columns.indexOf("is_enabled")
+
+        check(uuidIndex >= 0) {
+            "В Samsung Provider отсутствует столбец uuid"
+        }
+        check(nameIndex >= 0) {
+            "В Samsung Provider отсутствует столбец name"
         }
 
-        return rowLines.mapIndexed { index, line ->
-            val nameMatch = nameRegex.find(line)
+        return rows.mapIndexed { index, row ->
+            val uuid = row.getString("c$uuidIndex")
+                ?.toLongOrNull()
                 ?: throw IllegalStateException(
-                    "Некорректная строка Samsung Provider: строка ${index + 1}, отсутствует имя"
+                    "Samsung Provider: некорректный UUID в строке ${index + 1}"
                 )
 
-            // Исключаем имя из поиска метаданных, чтобы его текст
-            // не мог подменить UUID или поля состояния.
-            val metadata = line.removeRange(nameMatch.range)
-
-            val uuid = uuidRegex.find(metadata)
-                ?.groupValues?.get(1)?.toLongOrNull()
+            val name = row.getString("c$nameIndex")
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
                 ?: throw IllegalStateException(
-                    "Некорректная строка Samsung Provider: строка ${index + 1}, неверный UUID"
+                    "Samsung Provider: пустое имя в строке ${index + 1}"
                 )
-
-            val name = nameMatch.groupValues[1]
-                .trim()
-                .takeIf { it.isNotEmpty() }
-                ?: throw IllegalStateException(
-                    "Некорректная строка Samsung Provider: строка ${index + 1}, пустое имя"
-                )
-
-            val running = runningRegex.find(metadata)
-                ?.groupValues?.get(1)
-                ?.let { it == "1" }
-
-            val enabled = enabledRegex.find(metadata)
-                ?.groupValues?.get(1)
-                ?.let { it == "1" }
 
             ManualRoutine(
                 uuid = uuid,
                 name = name,
-                isRunning = running,
-                isEnabled = enabled
+                isRunning = readBoolean(row, runningIndex),
+                isEnabled = readBoolean(row, enabledIndex)
             )
+        }
+    }
+
+    private fun readBoolean(row: Bundle, index: Int): Boolean? {
+        if (index < 0) return null
+
+        return when (row.getString("c$index")?.trim()?.lowercase()) {
+            "1", "true" -> true
+            "0", "false" -> false
+            else -> null
         }
     }
 }

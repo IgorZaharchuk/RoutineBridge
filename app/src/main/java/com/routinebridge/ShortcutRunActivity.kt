@@ -73,12 +73,13 @@ class ShortcutRunActivity : Activity() {
             var errorMessage: String? = null
             try {
                 val result = RoutineActionExecutor(
+                    context = applicationContext,
                     english = english
                 ).execute(input, requestId)
                 Log.i(LOG_TAG, "SHORTCUT_RUN_FINISHED request=$requestId result=$result")
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "SHORTCUT_RUN_FAILED request=$requestId error=${e.message}", e)
-                errorMessage = if (e is RootAccessException) {
+                errorMessage = if (e is RootCoreAccessException) {
                     if (english) "Root access unavailable." else "Root-доступ недоступен."
                 } else {
                     e.message ?: if (english) "Action failed." else "Не удалось выполнить действие."

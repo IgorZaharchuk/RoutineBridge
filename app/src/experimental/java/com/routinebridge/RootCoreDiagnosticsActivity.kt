@@ -51,7 +51,7 @@ class RootCoreDiagnosticsActivity : Activity() {
 
         content.addView(text("Root Core — диагностика", 21f, white))
         content.addView(text(
-            "Тест выполняется отдельно от рабочего RootCommand. " +
+            "Рабочие операции и диагностика используют Root Core. " +
                 "Операции выполняются в одной root-сессии.",
             14f, secondary
         ))
