@@ -104,7 +104,7 @@ public final class RootCoreSession implements AutoCloseable {
                     tokenRef.set(token);
                     deathRef.set(deathRecipient);
                     accepted = true;
-                } catch (Throwable ignored) {
+                } catch (Throwable broadcastError) {
                 } finally {
                     if (accepted) {
                         connected.countDown();
