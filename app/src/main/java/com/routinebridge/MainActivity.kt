@@ -99,7 +99,7 @@ class MainActivity : Activity() {
                 !RoutineShortcutPublisher(this).publishAll(inputs)
             }.getOrDefault(true)
         }
-        refreshRoutines(false)
+        refreshRoutines()
     }
 
     private fun buildScreen() {
@@ -145,7 +145,7 @@ class MainActivity : Activity() {
                 english = !english
                 preferences.edit().putBoolean("english", english).apply()
                 buildScreen()
-                refreshRoutines(false)
+                refreshRoutines()
             },
             LinearLayout.LayoutParams(-2, dp(40))
         )
@@ -164,7 +164,7 @@ class MainActivity : Activity() {
             addInputButton,
             matchWrap().apply { bottomMargin = dp(8) }
         )
-        content.addView(button(tr("Обновить список сценариев", "Refresh routines")) { refreshRoutines(true) }, matchWrap().apply { bottomMargin = dp(8) })
+        content.addView(button(tr("Обновить список сценариев", "Refresh routines")) { refreshRoutines() }, matchWrap().apply { bottomMargin = dp(8) })
 
         content.addView(text(tr("Мои входы", "My inputs"), 19f, white, true)
             .also { it.setPadding(0, dp(8), 0, dp(10)) })
@@ -405,7 +405,7 @@ class MainActivity : Activity() {
         return form
     }
 
-    private fun refreshRoutines(showMessage: Boolean) {
+    private fun refreshRoutines() {
         val requestId = ++refreshRequestId
         setStatus(tr("Загрузка ручных сценариев через Root…", "Loading routines through Root…"))
         Thread {
@@ -456,7 +456,7 @@ class MainActivity : Activity() {
         if (routines.isEmpty()) {
             AlertDialog.Builder(this)
                 .setMessage(tr("Сначала дождись загрузки ручных сценариев Samsung.", "Wait for Samsung manual routines to load first."))
-                .setPositiveButton(tr("Обновить", "Refresh")) { _, _ -> refreshRoutines(true) }
+                .setPositiveButton(tr("Обновить", "Refresh")) { _, _ -> refreshRoutines() }
                 .setNegativeButton(tr("Закрыть", "Close"), null)
                 .show()
             return

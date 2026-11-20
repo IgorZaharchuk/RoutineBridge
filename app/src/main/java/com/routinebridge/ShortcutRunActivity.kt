@@ -26,7 +26,24 @@ class ShortcutRunActivity : Activity() {
             return
         }
 
-        val input = RoutineInputStore(this).load().firstOrNull { it.id == id }
+        val input = try {
+            RoutineInputStore(this).load().firstOrNull { it.id == id }
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=settings_load_failed", e)
+            val english = getSharedPreferences("settings", MODE_PRIVATE)
+                .getBoolean("english", false)
+            val message = if (english) {
+                "Could not load input settings. Open RoutineBridge to check them."
+            } else {
+                "Не удалось загрузить настройки входов. Открой RoutineBridge и проверь их."
+            }
+            android.widget.Toast.makeText(
+                this, message, android.widget.Toast.LENGTH_LONG
+            ).show()
+            finish()
+            return
+        }
+
         if (input == null) {
             Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=input_not_found id=$id")
             val english = getSharedPreferences("settings", MODE_PRIVATE)
