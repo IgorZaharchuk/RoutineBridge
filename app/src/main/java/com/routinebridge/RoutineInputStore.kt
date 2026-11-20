@@ -27,8 +27,13 @@ class RoutineInputStore(context: Context) {
                     throw IllegalStateException("Повреждены настройки: повторяется ID входа $id")
                 }
 
+                val uuidValue = item.opt("routineUuid")
                 val uuid = try {
-                    item.getLong("routineUuid")
+                    when (uuidValue) {
+                        is Int -> uuidValue.toLong()
+                        is Long -> uuidValue
+                        else -> throw IllegalArgumentException("UUID должен быть целым числом")
+                    }
                 } catch (e: Exception) {
                     throw IllegalStateException("Повреждена запись настроек: неверный UUID", e)
                 }
