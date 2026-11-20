@@ -31,6 +31,7 @@ class MainActivity : Activity() {
     private var english = false
     private var shortcutPublishFailed = false
     private var inputLoadError: String? = null
+    private var refreshRequestId = 0
     private val preferences by lazy {
         getSharedPreferences("settings", MODE_PRIVATE)
     }
@@ -404,11 +405,13 @@ class MainActivity : Activity() {
     }
 
     private fun refreshRoutines(showMessage: Boolean) {
+        val requestId = ++refreshRequestId
         setStatus(tr("Загрузка ручных сценариев через Root…", "Loading routines through Root…"))
         Thread {
             try {
                 val loaded = repository.load()
                 runOnUiThread {
+                    if (requestId != refreshRequestId) return@runOnUiThread
                     routines = loaded
                     val loadedMessage = tr(
                         "Найдено ручных сценариев: ${loaded.size}",
@@ -431,6 +434,7 @@ class MainActivity : Activity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    if (requestId != refreshRequestId) return@runOnUiThread
                     setStatus(
                         if (inputLoadError != null)
                             tr(
