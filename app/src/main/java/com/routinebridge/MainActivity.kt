@@ -455,12 +455,10 @@ class MainActivity : Activity() {
                                 "Ошибка загрузки настроек: $inputLoadError. Исходные данные сохранены.",
                                 "Settings load error: $inputLoadError. Original data was preserved."
                             )
-                            shortcutPublishFailed -> "$loadedMessage. " + tr(
-                                shortcutPublishError ?: tr(
-                                    "Ошибка обновления ярлыков.",
-                                    "Shortcut update failed."
-                                )
-                            )
+                            shortcutPublishFailed -> "$loadedMessage. ${shortcutPublishError ?: tr(
+                                "Ошибка обновления ярлыков.",
+                                "Shortcut update failed."
+                            )}"
                             else -> loadedMessage
                         }
                     )
@@ -634,11 +632,9 @@ class MainActivity : Activity() {
                     "Settings saved. Shortcuts: ${inputs.size}"
                 )
             } else {
-                tr(
-                    shortcutPublishError ?: tr(
-                        "Настройки сохранены, но ошибка обновления ярлыков.",
-                        "Settings saved, but shortcut update failed."
-                    )
+                shortcutPublishError ?: tr(
+                    "Настройки сохранены, но ошибка обновления ярлыков.",
+                    "Settings saved, but shortcut update failed."
                 )
             })
             renderInputs()
