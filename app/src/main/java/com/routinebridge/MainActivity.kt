@@ -540,8 +540,9 @@ class MainActivity : Activity() {
                     action = actionValues[actionSpinner.selectedItemPosition]
                 )
                 val updated = inputs.filterNot { it.id == item.id } + item
-                persist(updated)
-                dialog.dismiss()
+                if (persist(updated)) {
+                    dialog.dismiss()
+                }
             }
         }
         dialog.show()
@@ -558,13 +559,13 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun persist(updated: List<RoutineInput>) {
+    private fun persist(updated: List<RoutineInput>): Boolean {
         if (inputLoadError != null) {
             setStatus(tr(
                 "Сохранение заблокировано: сначала нужно восстановить настройки. Исходные данные не изменены.",
                 "Saving blocked: settings must be recovered first. Original data was not changed."
             ))
-            return
+            return false
         }
         try {
             val removedInputIds = inputs
@@ -599,6 +600,7 @@ class MainActivity : Activity() {
                 )
             })
             renderInputs()
+            true
         } catch (e: Exception) {
             setStatus(
                 if (e is RootAccessException)
@@ -606,6 +608,7 @@ class MainActivity : Activity() {
                 else
                     tr("Ошибка сохранения: ${e.message}", "Save error: ${e.message}")
             )
+            false
         }
     }
 
