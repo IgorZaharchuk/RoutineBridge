@@ -65,6 +65,7 @@ public final class RootCoreSession implements AutoCloseable {
         AtomicReference<IRootCoreManager> remoteRef = new AtomicReference<>();
         AtomicReference<IBinder> tokenRef = new AtomicReference<>();
         AtomicReference<IBinder.DeathRecipient> deathRef = new AtomicReference<>();
+        AtomicReference<Throwable> connectionError = new AtomicReference<>();
 
         Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -105,6 +106,12 @@ public final class RootCoreSession implements AutoCloseable {
                     deathRef.set(deathRecipient);
                     accepted = true;
                 } catch (Throwable broadcastError) {
+                    connectionError.set(broadcastError);
+                    android.util.Log.e(
+                            "RoutineBridgeRootCore",
+                            "Failed to accept Root Core Binder broadcast",
+                            broadcastError
+                    );
                 } finally {
                     if (accepted) {
                         connected.countDown();
@@ -136,6 +143,13 @@ public final class RootCoreSession implements AutoCloseable {
             boolean arrived = connected.await(timeoutMs, TimeUnit.MILLISECONDS);
 
             if (!arrived) {
+                Throwable cause = connectionError.get();
+                if (cause != null) {
+                    throw new IOException(
+                            "Failed to accept Root Core Binder broadcast before timeout",
+                            cause
+                    );
+                }
                 throw new TimeoutException("Timed out waiting for Root Core Binder");
             }
 
@@ -143,7 +157,13 @@ public final class RootCoreSession implements AutoCloseable {
             IBinder token = tokenRef.get();
             IBinder.DeathRecipient death = deathRef.get();
 
-            if (manager == null || token == null || !process.isAlive()) {
+            if (manager == null || token == null || death == null || !process.isAlive()) {
+                Throwable cause = connectionError.get();
+                if (cause != null) {
+                    throw new IOException(
+                            "Failed to establish Root Core Binder connection", cause
+                    );
+                }
                 throw new IOException("Root Core process exited before session became ready");
             }
 
@@ -168,7 +188,13 @@ public final class RootCoreSession implements AutoCloseable {
     public Bundle queryProvider(Uri uri, String[] projection) throws RemoteException {
         ensureOpen();
         if (uri == null) throw new IllegalArgumentException("URI is null");
-        return remote.query(uri.toString(), projection);
+        Bundle result = remote.query(uri.toString(), projection);
+        if (result == null) {
+            throw new RemoteException(
+                    "Root Core server returned a null Bundle for Provider query"
+            );
+        }
+        return result;
     }
 
     public void launchActivity(

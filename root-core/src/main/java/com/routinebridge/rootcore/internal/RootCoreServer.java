@@ -97,6 +97,8 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
         }
 
         Cursor cursor = null;
+        android.util.Log.i(TAG, "Provider query started: uri=" + uri
+                + ", projection=" + (projection == null ? "<all>" : projection.length));
         try {
             cursor = context.getContentResolver().query(
                     Uri.parse(uri),
@@ -107,11 +109,14 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
             );
 
             if (cursor == null) {
+                android.util.Log.e(TAG, "Provider returned a null Cursor: " + uri);
                 throw new RemoteException("ContentProvider returned a null Cursor");
             }
 
-            Bundle result = new Bundle();
             String[] columns = cursor.getColumnNames();
+            android.util.Log.i(TAG, "Provider cursor received: columns=" + columns.length);
+
+            Bundle result = new Bundle();
             result.putStringArray("columns", columns);
 
             ArrayList<Bundle> rows = new ArrayList<>();
@@ -124,13 +129,28 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
             }
 
             result.putParcelableArrayList("rows", rows);
+            android.util.Log.i(TAG, "Provider query completed: rows=" + rows.size()
+                    + ", columns=" + columns.length);
             return result;
         } catch (RemoteException error) {
+            android.util.Log.e(TAG, "Provider query failed: " + uri, error);
             throw error;
         } catch (Throwable error) {
-            throw new RemoteException("Provider query failed: " + error);
+            android.util.Log.e(TAG, "Provider query crashed: " + uri, error);
+            RemoteException remoteError = new RemoteException(
+                    "Provider query failed: " + error.getClass().getName()
+                            + ": " + error.getMessage()
+            );
+            remoteError.initCause(error);
+            throw remoteError;
         } finally {
-            if (cursor != null) cursor.close();
+            if (cursor != null) {
+                try {
+                    cursor.close();
+                } catch (Throwable closeError) {
+                    android.util.Log.w(TAG, "Failed to close Provider cursor", closeError);
+                }
+            }
         }
     }
 
