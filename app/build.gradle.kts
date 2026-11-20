@@ -80,3 +80,8 @@ tasks.configureEach {
         }
     }
 }
+
+
+dependencies {
+    implementation(project(":root-core"))
+}

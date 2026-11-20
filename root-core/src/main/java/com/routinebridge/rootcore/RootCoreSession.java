@@ -65,13 +65,13 @@ public final class RootCoreSession implements AutoCloseable {
         AtomicReference<IRootCoreManager> remoteRef = new AtomicReference<>();
         AtomicReference<IBinder> tokenRef = new AtomicReference<>();
         AtomicReference<IBinder.DeathRecipient> deathRef = new AtomicReference<>();
-        AtomicReference<Throwable> receiverError = new AtomicReference<>();
 
         Handler mainHandler = new Handler(Looper.getMainLooper());
 
         BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context ignored, Intent intent) {
+                boolean accepted = false;
                 try {
                     Bundle extras = intent.getBundleExtra("extra.bundle");
                     IBinder binder = extras == null ? null : extras.getBinder("binder");
@@ -81,6 +81,9 @@ public final class RootCoreSession implements AutoCloseable {
 
                     IRootCoreManager manager =
                             IRootCoreManager.Stub.asInterface(binder);
+                    if (manager == null) {
+                        throw new RemoteException("Root Core Binder interface is unavailable");
+                    }
 
                     int rootUid = manager.ping();
                     if (rootUid != 0) {
@@ -100,10 +103,12 @@ public final class RootCoreSession implements AutoCloseable {
                     remoteRef.set(manager);
                     tokenRef.set(token);
                     deathRef.set(deathRecipient);
-                } catch (Throwable error) {
-                    receiverError.set(error);
+                    accepted = true;
+                } catch (Throwable ignored) {
                 } finally {
-                    connected.countDown();
+                    if (accepted) {
+                        connected.countDown();
+                    }
                 }
             }
         };
@@ -132,11 +137,6 @@ public final class RootCoreSession implements AutoCloseable {
 
             if (!arrived) {
                 throw new TimeoutException("Timed out waiting for Root Core Binder");
-            }
-
-            Throwable error = receiverError.get();
-            if (error != null) {
-                throw new IOException("Root Core Binder handshake failed", error);
             }
 
             IRootCoreManager manager = remoteRef.get();
@@ -217,6 +217,17 @@ public final class RootCoreSession implements AutoCloseable {
             context.unregisterReceiver(receiver);
         } catch (Throwable ignored) {
         }
+    }
+
+    public boolean awaitTermination(long timeoutMs) throws InterruptedException {
+        if (timeoutMs < 0) {
+            throw new IllegalArgumentException("Timeout cannot be negative");
+        }
+        return rootProcess.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
+    }
+
+    public boolean isRootProcessAlive() {
+        return rootProcess.isAlive();
     }
 
     private static File installBootstrapAsset(Context context) throws IOException {
