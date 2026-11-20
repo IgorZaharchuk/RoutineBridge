@@ -3,6 +3,8 @@ package com.routinebridge
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ComponentName
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Color
 import android.os.Bundle
 import android.os.SystemClock
@@ -13,6 +15,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import com.routinebridge.rootcore.RootCore
 import com.routinebridge.rootcore.RootCoreSession
 import java.text.SimpleDateFormat
@@ -156,7 +159,17 @@ class RootCoreDiagnosticsActivity : Activity() {
         output = text("Результаты тестов появятся здесь.", 13f, secondary).apply {
             setPadding(dp(12), dp(12), dp(12), dp(12))
             setBackgroundColor(Color.rgb(30, 30, 30))
+            setTextIsSelectable(true)
         }
+
+        addButton(content, "Скопировать диагностику") {
+            val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(
+                ClipData.newPlainText("Root Core diagnostics", output.text)
+            )
+            Toast.makeText(this, "Диагностика скопирована", Toast.LENGTH_SHORT).show()
+        }
+
         content.addView(output)
 
         val scroll = ScrollView(this)
