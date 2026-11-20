@@ -3,7 +3,6 @@ package com.routinebridge.rootcore;
 import android.content.Context;
 import android.os.Looper;
 
-import java.io.IOException;
 import java.util.concurrent.TimeoutException;
 
 public final class RootCore {

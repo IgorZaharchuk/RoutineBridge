@@ -14,7 +14,6 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.Process;
 import android.os.RemoteException;
-import android.os.UserHandle;
 
 import com.routinebridge.rootcore.ipc.IRootCoreManager;
 

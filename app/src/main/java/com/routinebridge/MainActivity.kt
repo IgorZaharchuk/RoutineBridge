@@ -25,7 +25,6 @@ class MainActivity : Activity() {
     private val repository by lazy { ManualRoutineRepository(applicationContext) }
     private var inputs = emptyList<RoutineInput>()
     private var routines = emptyList<ManualRoutine>()
-    private lateinit var content: LinearLayout
     private lateinit var status: TextView
     private lateinit var inputContainer: LinearLayout
     private var english = false
@@ -147,7 +146,7 @@ class MainActivity : Activity() {
         }
 
         val scroll = ScrollView(this)
-        content = LinearLayout(this).apply {
+        val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
         scroll.addView(content)

@@ -2,6 +2,7 @@ name: Android Build
 
 on:
   push:
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
@@ -39,18 +40,11 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleRelease assembleExperimental
+        run: gradle assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: RoutineBridge-release
           path: app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
-
-      - name: Upload Experimental APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: RoutineBridge-experimental
-          path: app/build/outputs/apk/experimental/app-experimental.apk
           if-no-files-found: error
