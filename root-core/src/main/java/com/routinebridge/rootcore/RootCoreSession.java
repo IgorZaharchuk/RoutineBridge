@@ -96,17 +96,33 @@ public final class RootCoreSession implements AutoCloseable {
 
                     IBinder.DeathRecipient deathRecipient = () -> {
                         remoteRef.set(null);
+                        connectionError.compareAndSet(
+                                null,
+                                new RemoteException("Root Core Binder died during connection")
+                        );
                         connected.countDown();
                     };
-
-                    binder.linkToDeath(deathRecipient, 0);
 
                     remoteRef.set(manager);
                     tokenRef.set(token);
                     deathRef.set(deathRecipient);
+
+                    binder.linkToDeath(deathRecipient, 0);
+
+                    if (!binder.isBinderAlive()) {
+                        throw new RemoteException(
+                                "Root Core Binder died before connection completed"
+                        );
+                    }
+
                     accepted = true;
                 } catch (Throwable broadcastError) {
-                    connectionError.set(broadcastError);
+                    remoteRef.set(null);
+                    tokenRef.set(null);
+                    deathRef.set(null);
+                    connectionError.compareAndSet(null, broadcastError);
+                    connected.countDown();
+
                     android.util.Log.e(
                             "RoutineBridgeRootCore",
                             "Failed to accept Root Core Binder broadcast",
@@ -256,31 +272,38 @@ public final class RootCoreSession implements AutoCloseable {
         return rootProcess.isAlive();
     }
 
-    private static File installBootstrapAsset(Context context) throws IOException {
+    private static synchronized File installBootstrapAsset(Context context)
+            throws IOException {
         File directory = new File(context.getFilesDir(), "rootcore");
-        if (!directory.exists() && !directory.mkdirs()) {
+        if (!directory.isDirectory() && !directory.mkdirs()
+                && !directory.isDirectory()) {
             throw new IOException("Cannot create Root Core directory");
         }
 
         File target = new File(directory, "main.jar");
-        File temporary = new File(directory, "main.jar.tmp");
+        File temporary = File.createTempFile("main-", ".jar.tmp", directory);
 
-        try (java.io.InputStream input = context.getAssets().open("main.jar");
-             FileOutputStream output = new FileOutputStream(temporary)) {
-            byte[] buffer = new byte[8192];
-            int count;
-            while ((count = input.read(buffer)) != -1) {
-                output.write(buffer, 0, count);
+        try {
+            try (java.io.InputStream input = context.getAssets().open("main.jar");
+                 FileOutputStream output = new FileOutputStream(temporary)) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, count);
+                }
+                output.getFD().sync();
             }
-            output.getFD().sync();
-        }
 
-        if (!temporary.renameTo(target)) {
-            temporary.delete();
-            throw new IOException("Cannot install Root Core bootstrap asset");
-        }
+            if (!temporary.renameTo(target)) {
+                throw new IOException("Cannot install Root Core bootstrap asset");
+            }
 
-        return target;
+            return target;
+        } finally {
+            if (temporary.exists()) {
+                temporary.delete();
+            }
+        }
     }
 
     private static String shellQuote(String value) {
