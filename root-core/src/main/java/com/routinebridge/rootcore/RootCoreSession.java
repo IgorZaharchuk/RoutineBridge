@@ -73,7 +73,7 @@ public final class RootCoreSession implements AutoCloseable {
             @Override
             public void onReceive(Context ignored, Intent intent) {
                 try {
-                    Bundle extras = intent.getExtras();
+                    Bundle extras = intent.getBundleExtra("extra.bundle");
                     IBinder binder = extras == null ? null : extras.getBinder("binder");
                     if (binder == null) {
                         throw new RemoteException("Root Core broadcast has no Binder");

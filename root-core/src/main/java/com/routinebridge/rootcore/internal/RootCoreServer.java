@@ -48,7 +48,9 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
         Intent intent = new Intent(context.getPackageName() + ".ROOTCORE_BIND");
         intent.setPackage(context.getPackageName());
         intent.addFlags(0x00400000); // FLAG_RECEIVER_FROM_SHELL
-        intent.putExtra("binder", asBinder());
+        Bundle binderBundle = new Bundle();
+        binderBundle.putBinder("binder", asBinder());
+        intent.putExtra("extra.bundle", binderBundle);
 
         context.sendBroadcastAsUser(
                 intent,
