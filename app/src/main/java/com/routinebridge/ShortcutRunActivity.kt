@@ -13,6 +13,15 @@ class ShortcutRunActivity : Activity() {
         executeInput(intent)
     }
 
+    private fun openMainActivityWithError(message: String) {
+        val mainIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(MainActivity.EXTRA_SHORTCUT_ERROR, message)
+        }
+        startActivity(mainIntent)
+        finish()
+    }
+
     private fun executeInput(intent: Intent?) {
         if (intent?.action != MainActivity.ACTION_RUN_INPUT) {
             finish()
@@ -22,69 +31,66 @@ class ShortcutRunActivity : Activity() {
         val id = intent.getStringExtra(MainActivity.EXTRA_INPUT_ID)
         if (id == null) {
             Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=input_id_missing")
-            finish()
+            openMainActivityWithError(
+                if (getSharedPreferences("settings", MODE_PRIVATE).getBoolean("english", false))
+                    "Shortcut input ID is missing."
+                else
+                    "В ярлыке отсутствует идентификатор входа."
+            )
             return
         }
+
+        val english = getSharedPreferences("settings", MODE_PRIVATE)
+            .getBoolean("english", false)
 
         val input = try {
             RoutineInputStore(this).load().firstOrNull { it.id == id }
         } catch (e: Exception) {
             Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=settings_load_failed", e)
-            val english = getSharedPreferences("settings", MODE_PRIVATE)
-                .getBoolean("english", false)
             val message = if (english) {
                 "Could not load input settings. Open RoutineBridge to check them."
             } else {
-                "Не удалось загрузить настройки входов. Открой RoutineBridge и проверь их."
+                "Не удалось загрузить настройки входов. Проверь их в RoutineBridge."
             }
-            android.widget.Toast.makeText(
-                this, message, android.widget.Toast.LENGTH_LONG
-            ).show()
-            finish()
+            openMainActivityWithError(message)
             return
         }
 
         if (input == null) {
             Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=input_not_found id=$id")
-            val english = getSharedPreferences("settings", MODE_PRIVATE)
-                .getBoolean("english", false)
             val message = if (english) {
                 "This input no longer exists. Open RoutineBridge to refresh shortcuts."
             } else {
                 "Этот вход больше не существует. Открой RoutineBridge и обнови ярлыки."
             }
-            android.widget.Toast.makeText(
-                this, message, android.widget.Toast.LENGTH_LONG
-            ).show()
-            finish()
+            openMainActivityWithError(message)
             return
         }
 
         val requestId = UUID.randomUUID().toString().take(8)
 
         Thread {
+            var errorMessage: String? = null
             try {
                 val result = RoutineActionExecutor(
-                    english = getSharedPreferences("settings", MODE_PRIVATE)
-                        .getBoolean("english", false)
+                    english = english
                 ).execute(input, requestId)
                 Log.i(LOG_TAG, "SHORTCUT_RUN_FINISHED request=$requestId result=$result")
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "SHORTCUT_RUN_FAILED request=$requestId error=${e.message}", e)
-                val english = getSharedPreferences("settings", MODE_PRIVATE)
-                    .getBoolean("english", false)
-                val message = if (e is RootAccessException) {
+                errorMessage = if (e is RootAccessException) {
                     if (english) "Root access unavailable." else "Root-доступ недоступен."
                 } else {
                     e.message ?: if (english) "Action failed." else "Не удалось выполнить действие."
                 }
-                runOnUiThread {
-                    android.widget.Toast.makeText(
-                        this@ShortcutRunActivity, message, android.widget.Toast.LENGTH_LONG
-                    ).show()
+            }
+
+            runOnUiThread {
+                if (errorMessage != null) {
+                    openMainActivityWithError(errorMessage!!)
+                } else {
+                    finish()
                 }
-            } finally {
-                runOnUiThread { finish() }
             }
         }.start()
     }

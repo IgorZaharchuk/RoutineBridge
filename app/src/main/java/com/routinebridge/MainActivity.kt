@@ -100,6 +100,23 @@ class MainActivity : Activity() {
             }.getOrDefault(true)
         }
         refreshRoutines()
+        showShortcutError(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        showShortcutError(intent)
+    }
+
+    private fun showShortcutError(intent: Intent?) {
+        val message = intent?.getStringExtra(EXTRA_SHORTCUT_ERROR) ?: return
+        intent.removeExtra(EXTRA_SHORTCUT_ERROR)
+        AlertDialog.Builder(this)
+            .setTitle(tr("Ошибка выполнения ярлыка", "Shortcut execution error"))
+            .setMessage(message)
+            .setPositiveButton(tr("Закрыть", "Close"), null)
+            .show()
     }
 
     private fun buildScreen() {
@@ -690,5 +707,6 @@ class MainActivity : Activity() {
     companion object {
         const val ACTION_RUN_INPUT = "com.routinebridge.action.RUN_INPUT"
         const val EXTRA_INPUT_ID = "routine_input_id"
+        const val EXTRA_SHORTCUT_ERROR = "shortcut_error"
     }
 }
