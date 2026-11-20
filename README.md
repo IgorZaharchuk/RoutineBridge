@@ -43,6 +43,8 @@ RoutineBridge связывает входные события с действи
 
 Работа зависит от внутренних механизмов Samsung и доступности `ExternalRoutineContentProvider`. Совместимость с будущими версиями One UI не гарантируется.
 
+Количество динамических ярлыков ограничено системным параметром Android `maxShortcutsPerActivity`. На проверенном устройстве этот лимит составляет 15 ярлыков. Значение может отличаться на других устройствах. Если количество настроенных входов превышает доступный системный лимит, RoutineBridge не публикует ярлыки.
+
 RoutineBridge не является приложением Samsung Electronics и не связан с Samsung официально.
 
 ## Версия
@@ -95,6 +97,8 @@ The availability of specific input types depends on the interfaces exposed by th
 ## Limitations
 
 Operation depends on Samsung's internal mechanisms and the availability of `ExternalRoutineContentProvider`. Compatibility with future One UI versions is not guaranteed.
+
+The number of dynamic shortcuts is limited by Android's `maxShortcutsPerActivity` system setting. On the tested device, this limit is 15 shortcuts. The value may differ on other devices. If the number of configured inputs exceeds the available system limit, RoutineBridge does not publish the shortcuts.
 
 RoutineBridge is not an official Samsung Electronics application and is not affiliated with Samsung.
 

@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var inputContainer: LinearLayout
     private var english = false
     private var shortcutPublishFailed = false
+    private var shortcutPublishError: String? = null
     private var inputLoadError: String? = null
     private var refreshRequestId = 0
     private val preferences by lazy {
@@ -95,7 +96,10 @@ class MainActivity : Activity() {
         shortcutPublishFailed = if (inputLoadError != null) {
             true
         } else {
-            runCatching {
+            shortcutLimitError(inputs)?.let {
+                shortcutPublishError = it
+                true
+            } ?: runCatching {
                 !RoutineShortcutPublisher(this).publishAll(inputs)
             }.getOrDefault(true)
         }
@@ -422,6 +426,16 @@ class MainActivity : Activity() {
         return form
     }
 
+    private fun shortcutLimitError(items: List<RoutineInput>): String? {
+        val limit = getSystemService(android.content.pm.ShortcutManager::class.java)
+            .maxShortcutCountPerActivity
+        if (items.size <= limit) return null
+        return tr(
+            "Не удалось создать ярлыки: лимит Android — $limit, настроено — ${items.size}.",
+            "Failed to create shortcuts: Android limit is $limit, configured: ${items.size}."
+        )
+    }
+
     private fun refreshRoutines() {
         val requestId = ++refreshRequestId
         setStatus(tr("Загрузка ручных сценариев через Root…", "Loading routines through Root…"))
@@ -442,8 +456,10 @@ class MainActivity : Activity() {
                                 "Settings load error: $inputLoadError. Original data was preserved."
                             )
                             shortcutPublishFailed -> "$loadedMessage. " + tr(
-                                "Ошибка обновления ярлыков.",
-                                "Shortcut update failed."
+                                shortcutPublishError ?: tr(
+                                    "Ошибка обновления ярлыков.",
+                                    "Shortcut update failed."
+                                )
                             )
                             else -> loadedMessage
                         }
@@ -592,17 +608,24 @@ class MainActivity : Activity() {
             store.save(updated)
             inputs = updated
 
-            val shortcutsUpdated = runCatching {
-                RoutineShortcutPublisher(this).publishAll(
-                    updated,
-                    removedInputIds,
-                    tr(
-                        "Этот вход удалён в RoutineBridge.",
-                        "This input was deleted in RoutineBridge."
+            val limitError = shortcutLimitError(updated)
+            val shortcutsUpdated = if (limitError != null) {
+                shortcutPublishError = limitError
+                false
+            } else {
+                runCatching {
+                    RoutineShortcutPublisher(this).publishAll(
+                        updated,
+                        removedInputIds,
+                        tr(
+                            "Этот вход удалён в RoutineBridge.",
+                            "This input was deleted in RoutineBridge."
+                        )
                     )
-                )
-            }.getOrDefault(false)
+                }.getOrDefault(false)
+            }
 
+            if (shortcutsUpdated) shortcutPublishError = null
             shortcutPublishFailed = !shortcutsUpdated
             editingInputId = null
             setStatus(if (shortcutsUpdated) {
@@ -612,8 +635,10 @@ class MainActivity : Activity() {
                 )
             } else {
                 tr(
-                    "Настройки сохранены, но ошибка обновления ярлыков.",
-                    "Settings saved, but shortcut update failed."
+                    shortcutPublishError ?: tr(
+                        "Настройки сохранены, но ошибка обновления ярлыков.",
+                        "Settings saved, but shortcut update failed."
+                    )
                 )
             })
             renderInputs()
