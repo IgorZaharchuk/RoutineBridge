@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var inputContainer: LinearLayout
     private var english = false
     private var shortcutPublishFailed = false
+    private var inputLoadError: String? = null
     private val preferences by lazy {
         getSharedPreferences("settings", MODE_PRIVATE)
     }
@@ -81,12 +82,21 @@ class MainActivity : Activity() {
         window.isNavigationBarContrastEnforced = false
         window.decorView.systemUiVisibility = 0
 
-        inputs = store.load()
+        try {
+            inputs = store.load()
+        } catch (e: Exception) {
+            inputLoadError = e.message ?: e.javaClass.simpleName
+            inputs = emptyList()
+        }
         english = preferences.getBoolean("english", false)
         buildScreen()
-        shortcutPublishFailed = runCatching {
-            !RoutineShortcutPublisher(this).publishAll(inputs)
-        }.getOrDefault(true)
+        shortcutPublishFailed = if (inputLoadError != null) {
+            true
+        } else {
+            runCatching {
+                !RoutineShortcutPublisher(this).publishAll(inputs)
+            }.getOrDefault(true)
+        }
         refreshRoutines(false)
     }
 
@@ -146,8 +156,10 @@ class MainActivity : Activity() {
         status.background = rounded(variant, 10)
         content.addView(status, matchWrap().apply { bottomMargin = dp(10) })
 
+        val addInputButton = button(tr("＋  Добавить вход", "＋  Add input")) { openEditor() }
+        addInputButton.isEnabled = inputLoadError == null
         content.addView(
-            button(tr("＋  Добавить вход", "＋  Add input")) { openEditor() },
+            addInputButton,
             matchWrap().apply { bottomMargin = dp(8) }
         )
         content.addView(button(tr("Обновить список сценариев", "Refresh routines")) { refreshRoutines(true) }, matchWrap().apply { bottomMargin = dp(8) })
@@ -403,19 +415,29 @@ class MainActivity : Activity() {
                         "Manual routines found: ${loaded.size}"
                     )
                     setStatus(
-                        if (shortcutPublishFailed)
-                            "$loadedMessage. " + tr(
+                        when {
+                            inputLoadError != null -> tr(
+                                "Ошибка загрузки настроек: $inputLoadError. Исходные данные сохранены.",
+                                "Settings load error: $inputLoadError. Original data was preserved."
+                            )
+                            shortcutPublishFailed -> "$loadedMessage. " + tr(
                                 "Ошибка обновления ярлыков.",
                                 "Shortcut update failed."
                             )
-                        else loadedMessage
+                            else -> loadedMessage
+                        }
                     )
                     renderInputs()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     setStatus(
-                        if (e is RootAccessException)
+                        if (inputLoadError != null)
+                            tr(
+                                "Ошибка загрузки настроек: $inputLoadError. Исходные данные сохранены.",
+                                "Settings load error: $inputLoadError. Original data was preserved."
+                            )
+                        else if (e is RootAccessException)
                             tr("Root-доступ недоступен.", "Root access unavailable.")
                         else
                             tr("Ошибка загрузки: ${e.message}", "Loading error: ${e.message}")
@@ -532,6 +554,13 @@ class MainActivity : Activity() {
     }
 
     private fun persist(updated: List<RoutineInput>) {
+        if (inputLoadError != null) {
+            setStatus(tr(
+                "Сохранение заблокировано: сначала нужно восстановить настройки. Исходные данные не изменены.",
+                "Saving blocked: settings must be recovered first. Original data was not changed."
+            ))
+            return
+        }
         try {
             val removedInputIds = inputs
                 .filter { oldInput -> updated.none { it.id == oldInput.id } }

@@ -10,20 +10,36 @@ class RoutineInputStore(context: Context) {
     fun load(): List<RoutineInput> {
         val array = JSONArray(prefs.getString("items", "[]") ?: "[]")
         return buildList {
+            val ids = mutableSetOf<String>()
+
             for (i in 0 until array.length()) {
-                val item = array.optJSONObject(i) ?: continue
-                if (!item.has("routineUuid") || item.isNull("routineUuid")) continue
-                val uuid = item.optLong("routineUuid")
-                val action = runCatching {
-                    RoutineInputAction.valueOf(item.optString("action"))
-                }.getOrDefault(RoutineInputAction.TOGGLE)
-                add(RoutineInput(
-                    item.optString("id"),
-                    item.optString("label"),
-                    uuid,
-                    item.optString("routineName"),
-                    action
-                ))
+                val item = array.optJSONObject(i)
+                    ?: throw IllegalStateException("Повреждена запись настроек: элемент $i не является объектом")
+
+                val id = item.optString("id").takeIf { it.isNotBlank() }
+                    ?: throw IllegalStateException("Повреждена запись настроек: отсутствует ID")
+                val label = item.optString("label").takeIf { it.isNotBlank() }
+                    ?: throw IllegalStateException("Повреждена запись настроек: отсутствует название входа")
+                val routineName = item.optString("routineName").takeIf { it.isNotBlank() }
+                    ?: throw IllegalStateException("Повреждена запись настроек: отсутствует название сценария")
+
+                if (!ids.add(id)) {
+                    throw IllegalStateException("Повреждены настройки: повторяется ID входа $id")
+                }
+
+                val uuid = try {
+                    item.getLong("routineUuid")
+                } catch (e: Exception) {
+                    throw IllegalStateException("Повреждена запись настроек: неверный UUID", e)
+                }
+
+                val action = try {
+                    RoutineInputAction.valueOf(item.getString("action"))
+                } catch (e: Exception) {
+                    throw IllegalStateException("Повреждена запись настроек: неверное действие", e)
+                }
+
+                add(RoutineInput(id, label, uuid, routineName, action))
             }
         }
     }
