@@ -21,6 +21,7 @@ android {
 
     defaultConfig {
         applicationId = "com.routinebridge"
+        manifestPlaceholders["appLabel"] = "RoutineBridge"
         minSdk = 29
         targetSdk = 35
         versionCode = 6
