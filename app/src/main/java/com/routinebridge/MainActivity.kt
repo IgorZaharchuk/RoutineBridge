@@ -567,7 +567,7 @@ class MainActivity : Activity() {
             ))
             return false
         }
-        try {
+        return try {
             val removedInputIds = inputs
                 .filter { oldInput -> updated.none { it.id == oldInput.id } }
                 .map { it.id }
