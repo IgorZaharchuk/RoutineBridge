@@ -3,6 +3,18 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+val keystorePassword = System.getenv("KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("KEY_ALIAS")
+val releaseKeyPassword = System.getenv("KEY_PASSWORD")
+
+val releaseSigningConfigured = listOf(
+    keystorePath,
+    keystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.routinebridge"
     compileSdk = 35
@@ -15,24 +27,22 @@ android {
         versionName = "0.9.4"
     }
 
-    signingConfigs {
-        create("release") {
-            storeFile = file(
-                System.getenv("ANDROID_KEYSTORE_PATH")
-                    ?: error("ANDROID_KEYSTORE_PATH is missing")
-            )
-            storePassword = System.getenv("KEYSTORE_PASSWORD")
-                ?: error("KEYSTORE_PASSWORD is missing")
-            keyAlias = System.getenv("KEY_ALIAS")
-                ?: error("KEY_ALIAS is missing")
-            keyPassword = System.getenv("KEY_PASSWORD")
-                ?: error("KEY_PASSWORD is missing")
+    if (releaseSigningConfigured) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(requireNotNull(keystorePath))
+                storePassword = requireNotNull(keystorePassword)
+                keyAlias = requireNotNull(releaseKeyAlias)
+                keyPassword = requireNotNull(releaseKeyPassword)
+            }
         }
     }
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
         }
     }
@@ -44,5 +54,15 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+}
+
+tasks.configureEach {
+    if (name == "packageRelease" || name == "bundleRelease") {
+        doFirst {
+            check(releaseSigningConfigured) {
+                "Release signing is not configured. Set ANDROID_KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD."
+            }
+        }
     }
 }
