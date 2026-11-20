@@ -91,22 +91,52 @@ final class RootActivityLauncher {
                     .redirectErrorStream(true)
                     .start();
 
+            final java.lang.Process startedProcess = process;
+            final ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+            final java.util.concurrent.atomic.AtomicReference<Throwable> outputReadError =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+
+            Thread outputReader = new Thread(() -> {
+                try (InputStream input = startedProcess.getInputStream()) {
+                    byte[] buffer = new byte[1024];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        outputBuffer.write(buffer, 0, count);
+                    }
+                } catch (Throwable error) {
+                    outputReadError.set(error);
+                }
+            }, "RoutineBridge-am-output");
+            outputReader.setDaemon(true);
+            outputReader.start();
+
             if (!process.waitFor(15, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
                 process.waitFor(1, TimeUnit.SECONDS);
+
+                try {
+                    process.getInputStream().close();
+                } catch (Throwable ignored) {
+                }
+
+                outputReader.join(1, TimeUnit.SECONDS);
                 throw new RemoteException("am start timed out after 15 seconds");
             }
 
-            int exitCode = process.exitValue();
+            outputReader.join();
 
-            ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
-            try (InputStream input = process.getInputStream()) {
-                byte[] buffer = new byte[1024];
-                int count;
-                while ((count = input.read(buffer)) != -1) {
-                    outputBuffer.write(buffer, 0, count);
-                }
+            Throwable readError = outputReadError.get();
+            if (readError != null) {
+                RemoteException remoteError = new RemoteException(
+                        "Failed to read am start output: "
+                                + readError.getClass().getName()
+                                + ": " + readError.getMessage()
+                );
+                remoteError.initCause(readError);
+                throw remoteError;
             }
+
+            int exitCode = process.exitValue();
 
             String output = new String(
                     outputBuffer.toByteArray(),
