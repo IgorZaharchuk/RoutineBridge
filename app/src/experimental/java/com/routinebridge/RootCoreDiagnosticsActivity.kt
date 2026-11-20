@@ -155,6 +155,28 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+        addButton(content, "7. Выполнить полный цикл") {
+            val id = routineId.text.toString().trim().toLongOrNull()
+            if (id == null) {
+                log("Укажи числовой UUID сценария.")
+            } else {
+                AlertDialog.Builder(this)
+                    .setTitle("Выполнить полный цикл?")
+                    .setMessage(
+                        "Сценарий $id будет запущен один раз. " +
+                            "После запуска проверим is_running. " +
+                            "Исходное состояние автоматически восстанавливаться не будет."
+                    )
+                    .setNegativeButton("Отмена", null)
+                    .setPositiveButton("Выполнить") { _, _ ->
+                        runTest("Полный цикл") {
+                            runFullCycle(id)
+                        }
+                    }
+                    .show()
+            }
+        }
+
         output = text("Результаты тестов появятся здесь.", 13f, secondary).apply {
             setPadding(dp(12), dp(12), dp(12), dp(12))
             setBackgroundColor(Color.rgb(30, 30, 30))
@@ -174,6 +196,140 @@ class RootCoreDiagnosticsActivity : Activity() {
         val scroll = ScrollView(this)
         scroll.addView(content)
         setContentView(scroll)
+    }
+
+    private fun runFullCycle(id: Long): String {
+        val report = mutableListOf<String>()
+        var current: RootCoreSession? = null
+
+        try {
+            check(session == null) {
+                "Сначала закрой открытую root-сессию."
+            }
+            report.add("1. Открытие root-сессии")
+            val openStart = SystemClock.elapsedRealtime()
+            current = RootCore.open(this, 30_000L)
+            session = current
+            report.add(
+                "OK: Binder готов за " +
+                    "${SystemClock.elapsedRealtime() - openStart} мс"
+            )
+
+            report.add("2. Проверка Binder и UID")
+            val pingStart = SystemClock.elapsedRealtime()
+            val uid = current.ping()
+            check(uid == 0) { "Ожидался UID 0, получен $uid" }
+            report.add(
+                "OK: UID=$uid, Ping " +
+                    "${SystemClock.elapsedRealtime() - pingStart} мс"
+            )
+
+            report.add("3. Поиск сценария в Samsung Provider")
+            val before = readRoutineRunning(current, id)
+            report.add("OK: UUID=$id, is_running до запуска=$before")
+
+            report.add("4. Запуск сценария")
+            val extras = Bundle().apply {
+                putLong("EXTRA_KEY_ROUTINE_UUID", id)
+            }
+            val launchStart = SystemClock.elapsedRealtime()
+            current.launchActivity(
+                ComponentName(
+                    "com.samsung.android.app.routines",
+                    "com.samsung.android.app.routines.ui.shortcut.ShortcutLaunchActivity"
+                ),
+                null,
+                extras,
+                0x10008000
+            )
+            report.add(
+                "OK: am start завершился без ошибки за " +
+                    "${SystemClock.elapsedRealtime() - launchStart} мс"
+            )
+
+            report.add("5. Проверка изменения is_running")
+            val checkStart = SystemClock.elapsedRealtime()
+            val deadline = checkStart + 5_000L
+            var after = before
+
+            while (after == before &&
+                SystemClock.elapsedRealtime() < deadline) {
+                SystemClock.sleep(250L)
+                after = readRoutineRunning(current, id)
+            }
+
+            if (after != before) {
+                report.add(
+                    "OK: is_running изменился: $before -> $after"
+                )
+            } else {
+                report.add(
+                    "НЕ ПОДТВЕРЖДЕНО: is_running не изменился за 5 секунд. " +
+                        "Текущее значение=$after"
+                )
+            }
+        } catch (error: Throwable) {
+            report.add(
+                "ОШИБКА ЦИКЛА: ${error.javaClass.simpleName}: " +
+                    "${error.message ?: error}"
+            )
+        } finally {
+            if (current != null) {
+                report.add("6. Закрытие root-сессии")
+                try {
+                    current.close()
+                    val stopped = current.awaitTermination(5_000L)
+                    if (stopped) {
+                        session = null
+                        report.add("OK: root-процесс завершился")
+                    } else {
+                        report.add(
+                            "ОШИБКА: root-процесс не завершился за 5 секунд; " +
+                                "isAlive=${current.isRootProcessAlive()}"
+                        )
+                    }
+                } catch (error: Throwable) {
+                    report.add(
+                        "ОШИБКА закрытия: ${error.javaClass.simpleName}: " +
+                            "${error.message ?: error}"
+                    )
+                }
+            }
+        }
+
+        return report.joinToString("\n")
+    }
+
+    private fun readRoutineRunning(
+        current: RootCoreSession,
+        id: Long
+    ): Boolean {
+        val result = current.queryProvider(providerUri, null)
+        val columns = result.getStringArray("columns")
+            ?: error("Provider не вернул список столбцов")
+
+        @Suppress("DEPRECATION")
+        val rows = result.getParcelableArrayList<Bundle>("rows")
+            ?: error("Provider не вернул строки")
+
+        val uuidIndex = columns.indexOf("uuid")
+        val runningIndex = columns.indexOf("is_running")
+
+        check(uuidIndex >= 0) { "В Provider отсутствует столбец uuid" }
+        check(runningIndex >= 0) { "В Provider отсутствует столбец is_running" }
+
+        val row = rows.firstOrNull {
+            it.getString("c$uuidIndex")?.toLongOrNull() == id
+        } ?: error("Сценарий UUID=$id не найден в Provider")
+
+        val value = row.getString("c$runningIndex")
+            ?: error("Provider вернул пустое значение is_running")
+
+        return when (value.trim()) {
+            "1", "true", "TRUE" -> true
+            "0", "false", "FALSE" -> false
+            else -> error("Неизвестное значение is_running: $value")
+        }
     }
 
     private fun queryReport(current: RootCoreSession): String {
