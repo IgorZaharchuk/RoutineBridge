@@ -586,7 +586,7 @@ class MainActivity : Activity() {
 
             shortcutPublishFailed = !shortcutsUpdated
             editingInputId = null
-            status.text = if (shortcutsUpdated) {
+            setStatus(if (shortcutsUpdated) {
                 tr(
                     "Настройки сохранены. Ярлыков: ${inputs.size}",
                     "Settings saved. Shortcuts: ${inputs.size}"
@@ -596,13 +596,15 @@ class MainActivity : Activity() {
                     "Настройки сохранены, но ошибка обновления ярлыков.",
                     "Settings saved, but shortcut update failed."
                 )
-            }
+            })
             renderInputs()
         } catch (e: Exception) {
-            status.text = if (e is RootAccessException)
-                tr("Root-доступ недоступен.", "Root access unavailable.")
-            else
-                tr("Ошибка сохранения: ${e.message}", "Save error: ${e.message}")
+            setStatus(
+                if (e is RootAccessException)
+                    tr("Root-доступ недоступен.", "Root access unavailable.")
+                else
+                    tr("Ошибка сохранения: ${e.message}", "Save error: ${e.message}")
+            )
         }
     }
 
