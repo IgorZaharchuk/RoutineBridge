@@ -45,6 +45,19 @@ android {
             }
             isMinifyEnabled = false
         }
+
+        create("experimental") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".experimental"
+            versionNameSuffix = "-experimental"
+            manifestPlaceholders["appLabel"] = "RoutineBridge Experimental"
+            matchingFallbacks += listOf("release")
+
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            isMinifyEnabled = false
+        }
     }
 
     compileOptions {
