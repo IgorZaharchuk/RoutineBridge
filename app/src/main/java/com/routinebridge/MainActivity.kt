@@ -187,18 +187,6 @@ class MainActivity : Activity() {
         )
         content.addView(button(tr("Обновить список сценариев", "Refresh routines")) { refreshRoutines() }, matchWrap().apply { bottomMargin = dp(8) })
 
-        if (packageName.endsWith(".experimental")) {
-            content.addView(
-                button(tr("Диагностика Root Core", "Root Core diagnostics")) {
-                    val diagnosticsClass = Class.forName(
-                        "com.routinebridge.RootCoreDiagnosticsActivity"
-                    )
-                    startActivity(Intent(this, diagnosticsClass))
-                },
-                matchWrap().apply { bottomMargin = dp(8) }
-            )
-        }
-
         content.addView(text(tr("Мои входы", "My inputs"), 19f, white, true)
             .also { it.setPadding(0, dp(8), 0, dp(10)) })
         inputContainer = LinearLayout(this).apply {
