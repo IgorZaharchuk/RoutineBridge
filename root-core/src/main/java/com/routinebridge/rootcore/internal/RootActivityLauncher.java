@@ -119,7 +119,7 @@ final class RootActivityLauncher {
                 } catch (Throwable ignored) {
                 }
 
-                outputReader.join(1, TimeUnit.SECONDS);
+                outputReader.join(1_000L);
                 throw new RemoteException("am start timed out after 15 seconds");
             }
 
