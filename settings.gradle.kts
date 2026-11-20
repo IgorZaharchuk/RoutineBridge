@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "RoutineBridge"
-include(":app")
+include(":app", ":root-core", ":root-core-shared", ":root-core-bootstrap")
