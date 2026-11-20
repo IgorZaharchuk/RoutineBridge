@@ -51,7 +51,8 @@ class MainActivity : Activity() {
             value.contains("не удалось", true) ||
             value.contains("недоступен", true) ||
             value.contains("failed", true) ||
-            value.contains("unavailable", true) -> Color.rgb(235, 130, 130)
+            value.contains("unavailable", true) ||
+            value.contains("error", true) -> Color.rgb(235, 130, 130)
             value.contains("найдено", true) ||
             value.contains("сохранены", true) ||
             value.contains("успешно", true) ||
