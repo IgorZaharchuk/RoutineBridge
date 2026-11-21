@@ -189,9 +189,7 @@ internal object SamsungRoutineDispatcher {
                         confirmedAttempt = true
                     }
                     RoutineExecutionStatus.TIMEOUT -> {
-                        queue.releaseInFlight(
-                            preserveAttempt = confirmedAttempt
-                        )
+                        releaseAfterFailure(confirmedAttempt)
                         Log.w(
                             TAG,
                             "DISPATCH_TIMEOUT request=$requestId uuid=$uuid " +
@@ -199,7 +197,6 @@ internal object SamsungRoutineDispatcher {
                                 "deferred=$confirmedAttempt"
                         )
 
-                        if (confirmedAttempt) pauseUntilNextEvent()
                         return confirmedAttempt
                     }
                 }
@@ -231,9 +228,7 @@ internal object SamsungRoutineDispatcher {
                 )
             }
         } catch (error: Exception) {
-            val active = queue.releaseInFlight(
-                preserveAttempt = confirmedAttempt
-            )
+            val active = releaseAfterFailure(confirmedAttempt)
 
             Log.e(
                 TAG,
@@ -244,7 +239,6 @@ internal object SamsungRoutineDispatcher {
             )
             showFailure(error)
 
-            if (confirmedAttempt) pauseUntilNextEvent()
             return confirmedAttempt
         }
     }
@@ -253,10 +247,18 @@ internal object SamsungRoutineDispatcher {
      * Stop draining without discarding pending work.
      * The next enqueue will schedule the single worker again.
      */
-    private fun pauseUntilNextEvent() {
-        synchronized(schedulingLock) {
+    private fun releaseAfterFailure(
+        preserveAttempt: Boolean
+    ): RoutineCommandSnapshot? = synchronized(schedulingLock) {
+        val released = queue.releaseInFlight(
+            preserveAttempt = preserveAttempt
+        )
+
+        if (preserveAttempt) {
             workerScheduled = false
         }
+
+        released
     }
 
     private fun showFailure(error: Exception) {
