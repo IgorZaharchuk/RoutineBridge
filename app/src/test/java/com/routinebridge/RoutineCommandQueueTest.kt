@@ -46,9 +46,9 @@ class RoutineCommandQueueTest {
     fun `removing identity and adding UUID again gives it a new position`() {
         val queue = RoutineCommandQueue()
 
-        queue.enqueue(10L, BooleanStateTransform.ENABLE)
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
         queue.enqueue(20L, BooleanStateTransform.ENABLE)
-        queue.enqueue(10L, BooleanStateTransform.DISABLE)
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
         queue.enqueue(10L, BooleanStateTransform.TOGGLE)
 
         assertEquals(
