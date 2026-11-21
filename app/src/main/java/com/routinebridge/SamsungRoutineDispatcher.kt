@@ -203,8 +203,7 @@ internal object SamsungRoutineDispatcher {
 
                 // Reconcile against the latest Provider state and all events
                 // received while the physical operation was running.
-                val actual = repository.load().firstOrNull { it.uuid == uuid }
-                    ?.isRunning
+                val actual = result.actualState
                     ?: throw IllegalStateException(
                         context.getString(R.string.routine_state_unknown)
                     )
