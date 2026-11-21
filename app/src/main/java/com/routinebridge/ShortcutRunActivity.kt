@@ -81,7 +81,18 @@ class ShortcutRunActivity : Activity() {
                 val result = RoutineActionExecutor(
                     context = applicationContext
                 ).execute(input, requestId)
-                Log.i(LOG_TAG, "SHORTCUT_RUN_FINISHED request=$requestId result=$result")
+
+                if (result == null) {
+                    Log.i(
+                        LOG_TAG,
+                        "SHORTCUT_RUN_DEBOUNCED request=$requestId inputId=${input.id}"
+                    )
+                } else {
+                    Log.i(
+                        LOG_TAG,
+                        "SHORTCUT_RUN_FINISHED request=$requestId result=$result"
+                    )
+                }
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "SHORTCUT_RUN_FAILED request=$requestId error=${e.message}", e)
                 errorMessage = if (e is RootCoreAccessException) {

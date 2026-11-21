@@ -15,15 +15,34 @@ class RoutineActionExecutor(
 ) {
     private val localizedContext = AppLocale.wrap(context)
 
-    fun execute(input: RoutineInput, requestId: String): String {
-        val inputLock = inputLocks.computeIfAbsent(input.id) { Any() }
-        return synchronized(inputLock) {
-            val routineLock = routineLocks.computeIfAbsent(
-                input.routineUuid.toString()
-            ) { Any() }
-            synchronized(routineLock) {
-                executeLocked(input, requestId)
+    fun execute(input: RoutineInput, requestId: String): String? {
+        val now = SystemClock.elapsedRealtime()
+        var accepted = false
+
+        lastAcceptedInputAt.compute(input.id) { _, previous ->
+            if (previous == null || now - previous >= DEBOUNCE_INTERVAL_MS) {
+                accepted = true
+                now
+            } else {
+                previous
             }
+        }
+
+        if (!accepted) {
+            Log.i(
+                LOG_TAG,
+                "INPUT_DEBOUNCED request=$requestId input=${input.id} " +
+                    "window=${DEBOUNCE_INTERVAL_MS}ms"
+            )
+            return null
+        }
+
+        val routineLock = routineLocks.computeIfAbsent(
+            input.routineUuid.toString()
+        ) { Any() }
+
+        return synchronized(routineLock) {
+            executeLocked(input, requestId)
         }
     }
 
@@ -175,7 +194,9 @@ class RoutineActionExecutor(
     private companion object {
         const val LOG_TAG = "RoutineBridge"
 
-        val inputLocks = ConcurrentHashMap<String, Any>()
+        const val DEBOUNCE_INTERVAL_MS = 500L
+
+        val lastAcceptedInputAt = ConcurrentHashMap<String, Long>()
         val routineLocks = ConcurrentHashMap<String, Any>()
 
     }
