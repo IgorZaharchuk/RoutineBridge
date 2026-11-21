@@ -2,6 +2,8 @@ package com.routinebridge
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.os.Bundle
 import android.os.SystemClock
@@ -25,8 +27,11 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
     private val screenStartedAt = SystemClock.elapsedRealtime()
     private lateinit var firstId: EditText
     private lateinit var secondId: EditText
+    private lateinit var delayInput: EditText
+    private lateinit var orderButton: Button
     private lateinit var output: TextView
     private lateinit var startButton: Button
+    private var firstLaunchLabel = "T1"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,6 +53,21 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
         root.addView(firstId)
         root.addView(secondId)
 
+        delayInput = edit("Задержка между запусками, мс").apply {
+            setText("500")
+        }
+        root.addView(delayInput)
+
+        orderButton = Button(this).apply {
+            isAllCaps = false
+            updateOrderButtonText()
+            setOnClickListener {
+                firstLaunchLabel = if (firstLaunchLabel == "T1") "T2" else "T1"
+                updateOrderButtonText()
+            }
+        }
+        root.addView(orderButton)
+
         startButton = Button(this).apply {
             text = "Подготовить и запустить одновременно"
             isAllCaps = false
@@ -62,12 +82,37 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
         }
         root.addView(output)
 
+        root.addView(Button(this).apply {
+            text = "Копировать лог"
+            isAllCaps = false
+            setOnClickListener {
+                val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(
+                    ClipData.newPlainText("RoutineBridge diagnostic log", output.text)
+                )
+                android.widget.Toast.makeText(
+                    this@RootCoreParallelDiagnosticsActivity,
+                    "Лог скопирован",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        })
+
         setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    private fun updateOrderButtonText() {
+        orderButton.text = "Первым запускается: $firstLaunchLabel  ↔  изменить"
     }
 
     private fun confirmAndStart() {
         val a = firstId.text.toString().trim().toLongOrNull()
         val b = secondId.text.toString().trim().toLongOrNull()
+        val delayMs = delayInput.text.toString().trim().toLongOrNull()
+        if (delayMs == null || delayMs !in 0L..10_000L) {
+            appendLog("Ошибка: задержка должна быть от 0 до 10000 мс.")
+            return
+        }
         if (a == null || b == null || a == b) {
             appendLog("Ошибка: укажи два разных числовых UUID.")
             return
@@ -77,7 +122,7 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Подтвердить переключение сценариев?")
             .setMessage(
-                "Оба сценария будут запущены почти одновременно. " +
+                "Порядок: $firstLaunchLabel первым, затем второй через $delayMs мс. " +
                     "ShortcutLaunchActivity переключает их состояние: " +
                     "сценарии могут включить или выключить связанные устройства. " +
                     "Автоматического возврата исходного состояния не будет."
@@ -86,25 +131,36 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
             .setPositiveButton("Запустить тест") { _, _ ->
                 startButton.isEnabled = false
                 output.text = ""
-                workers.execute { runParallelTest(a, b) }
+                val selectedFirst = firstLaunchLabel
+                workers.execute { runParallelTest(a, b, selectedFirst, delayMs) }
             }
             .setOnCancelListener { running.set(false) }
             .show()
     }
 
-    private fun runParallelTest(first: Long, second: Long) {
+    private fun runParallelTest(
+        first: Long,
+        second: Long,
+        firstLaunchLabel: String,
+        launchDelayMs: Long
+    ) {
         val ready = CountDownLatch(2)
         val completed = CountDownLatch(2)
         val startGate = CountDownLatch(1)
+        val firstLaunchSent = CountDownLatch(1)
         val abortBeforeLaunch = AtomicBoolean(false)
         var submittedTasks = 0
 
         try {
             appendLog("TEST: UUID A=$first, UUID B=$second")
+            appendLog("LAUNCH ORDER: $firstLaunchLabel first; delay=${launchDelayMs}ms")
 
             workers.submit {
                 try {
-                    executeTask("T1", first, ready, startGate, abortBeforeLaunch)
+                    executeTask(
+                        "T1", first, ready, startGate, abortBeforeLaunch,
+                        firstLaunchLabel, launchDelayMs, firstLaunchSent
+                    )
                 } finally {
                     completed.countDown()
                 }
@@ -113,7 +169,10 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
 
             workers.submit {
                 try {
-                    executeTask("T2", second, ready, startGate, abortBeforeLaunch)
+                    executeTask(
+                        "T2", second, ready, startGate, abortBeforeLaunch,
+                        firstLaunchLabel, launchDelayMs, firstLaunchSent
+                    )
                 } finally {
                     completed.countDown()
                 }
@@ -179,7 +238,10 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
         routineId: Long,
         ready: CountDownLatch,
         startGate: CountDownLatch,
-        abortBeforeLaunch: AtomicBoolean
+        abortBeforeLaunch: AtomicBoolean,
+        firstLaunchLabel: String,
+        launchDelayMs: Long,
+        firstLaunchSent: CountDownLatch
     ) {
         var session: RootCoreSession? = null
         var readyReported = false
@@ -220,6 +282,22 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
                 return
             }
 
+            if (label == firstLaunchLabel) {
+                appendLog("$label: FIRST LAUNCH")
+            } else {
+                check(firstLaunchSent.await(45, TimeUnit.SECONDS)) {
+                    "не дождались первого запуска"
+                }
+                check(!abortBeforeLaunch.get()) {
+                    "первый запуск завершился ошибкой; второй отменён"
+                }
+                appendLog("$label: WAIT ${launchDelayMs} ms BEFORE LAUNCH")
+                SystemClock.sleep(launchDelayMs)
+                check(!abortBeforeLaunch.get()) {
+                    "первый запуск завершился ошибкой во время задержки; второй отменён"
+                }
+            }
+
             val extras = Bundle().apply {
                 putLong("EXTRA_KEY_ROUTINE_UUID", routineId)
             }
@@ -231,6 +309,7 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
             val launchStarted = SystemClock.elapsedRealtime()
             opened.launchActivity(component, null, extras, 0x10008000)
             appendLog("$label: LAUNCH SENT in ${SystemClock.elapsedRealtime() - launchStarted} ms")
+            if (label == firstLaunchLabel) firstLaunchSent.countDown()
 
             val pollStarted = SystemClock.elapsedRealtime()
             val deadline = pollStarted + 5_000L
@@ -261,6 +340,7 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
             appendLog("$label: ERROR ${error.javaClass.simpleName}: ${error.message}")
         } finally {
             if (!readyReported) ready.countDown()
+            if (label == firstLaunchLabel) firstLaunchSent.countDown()
             if (session != null) {
                 try {
                     val closeStarted = SystemClock.elapsedRealtime()
