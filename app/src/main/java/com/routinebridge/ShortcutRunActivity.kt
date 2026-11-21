@@ -14,6 +14,12 @@ class ShortcutRunActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.i(
+            LOG_TAG,
+            "SHORTCUT_ACTIVITY_CREATE action=${intent?.action} " +
+                "inputId=${intent?.getStringExtra(MainActivity.EXTRA_INPUT_ID)} " +
+                "component=${intent?.component?.flattenToShortString()}"
+        )
         executeInput(intent)
     }
 
@@ -28,6 +34,11 @@ class ShortcutRunActivity : Activity() {
 
     private fun executeInput(intent: Intent?) {
         if (intent?.action != MainActivity.ACTION_RUN_INPUT) {
+            Log.e(
+                LOG_TAG,
+                "SHORTCUT_INTENT_REJECTED action=${intent?.action} " +
+                    "inputId=${intent?.getStringExtra(MainActivity.EXTRA_INPUT_ID)}"
+            )
             finish()
             return
         }
@@ -58,6 +69,11 @@ class ShortcutRunActivity : Activity() {
         }
 
         val requestId = UUID.randomUUID().toString().take(8)
+        Log.i(
+            LOG_TAG,
+            "SHORTCUT_EXECUTE_START request=$requestId inputId=${input.id} " +
+                "routineUuid=${input.routineUuid} action=${input.action}"
+        )
 
         Thread {
             var errorMessage: String? = null
