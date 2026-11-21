@@ -16,9 +16,7 @@ import android.widget.TextView
 import android.graphics.Color
 import com.routinebridge.rootcore.RootCore
 import com.routinebridge.rootcore.RootCoreSession
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class RootCoreParallelDiagnosticsActivity : Activity() {
@@ -41,7 +39,7 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
 
         root.addView(text("Параллельный тест Root Core", 21f, Color.WHITE))
         root.addView(text(
-            "Две независимые root-сессии одновременно запустят два разных ручных сценария.",
+            "Две root-сессии подготовятся заранее. Второй сценарий запустится только после подтверждения первого.",
             14f, Color.LTGRAY
         ))
 
@@ -51,7 +49,7 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
         root.addView(secondId)
 
         startButton = Button(this).apply {
-            text = "Подготовить и запустить одновременно"
+            text = "Подготовить и запустить последовательно"
             isAllCaps = false
             setOnClickListener { confirmAndStart() }
         }
@@ -95,7 +93,7 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Подтвердить переключение сценариев?")
             .setMessage(
-                "Оба сценария будут отправлены на запуск одновременно. " +
+                "Сначала будет запущен первый сценарий. Второй запустится только после подтверждения включения первого. " +
                     "ShortcutLaunchActivity переключает их состояние: " +
                     "сценарии могут включить или выключить связанные устройства. " +
                     "Автоматического возврата исходного состояния не будет."
@@ -111,92 +109,79 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
     }
 
     private fun runParallelTest(first: Long, second: Long) {
-        val ready = CountDownLatch(2)
-        val completed = CountDownLatch(2)
-        val startGate = CountDownLatch(1)
-        val launchReady = CountDownLatch(2)
-        val launchGate = CountDownLatch(1)
-        val abortBeforeLaunch = AtomicBoolean(false)
-        var submittedTasks = 0
+        var firstSession: RootCoreSession? = null
+        var secondSession: RootCoreSession? = null
 
         try {
-            appendLog("TEST: UUID A=$first, UUID B=$second")
-            appendLog("LAUNCH MODE: concurrent calls; shared launch gate")
+            appendLog("TEST: T1 UUID=$first; T2 UUID=$second")
+            appendLog("LAUNCH MODE: sequential; wait for confirmed state transition")
 
-            workers.submit {
-                try {
-                    executeTask(
-                        "T1", first, ready, startGate, launchReady,
-                        launchGate, abortBeforeLaunch
-                    )
-                } finally {
-                    completed.countDown()
+            appendLog("T1: OPEN")
+            val openedFirst = RootCore.open(applicationContext, 30_000L)
+            firstSession = openedFirst
+            val firstUid = openedFirst.ping()
+            appendLog("T1: OPEN OK; PING uid=$firstUid")
+            check(firstUid == 0) { "T1: ожидался UID 0" }
+
+            appendLog("T2: OPEN")
+            val openedSecond = RootCore.open(applicationContext, 30_000L)
+            secondSession = openedSecond
+            val secondUid = openedSecond.ping()
+            appendLog("T2: OPEN OK; PING uid=$secondUid")
+            check(secondUid == 0) { "T2: ожидался UID 0" }
+
+            val repository = ManualRoutineRepository(applicationContext)
+
+            val firstRoutine = repository.load(openedFirst)
+                .firstOrNull { it.uuid == first }
+                ?: error("T1: UUID=$first отсутствует в Samsung Provider")
+            check(firstRoutine.isEnabled == true) {
+                "T1: сценарий '${firstRoutine.name}' выключен или состояние неизвестно"
+            }
+            check(firstRoutine.isRunning == false) {
+                "T1: '${firstRoutine.name}' должен быть выключен перед тестом"
+            }
+
+            val secondRoutine = repository.load(openedSecond)
+                .firstOrNull { it.uuid == second }
+                ?: error("T2: UUID=$second отсутствует в Samsung Provider")
+            check(secondRoutine.isEnabled == true) {
+                "T2: сценарий '${secondRoutine.name}' выключен или состояние неизвестно"
+            }
+            check(secondRoutine.isRunning == false) {
+                "T2: '${secondRoutine.name}' должен быть выключен перед тестом"
+            }
+
+            appendLog("T1: READY '${firstRoutine.name}', is_running=false")
+            appendLog("T2: READY '${secondRoutine.name}', is_running=false")
+            appendLog("SEQUENCE: сначала T1; T2 ждёт подтверждения T1")
+
+            val firstSucceeded = launchAndWait(
+                "T1", first, openedFirst, repository
+            )
+            if (!firstSucceeded) {
+                appendLog("T2: SKIPPED — T1 не подтвердил переход состояния")
+                return
+            }
+
+            appendLog("SEQUENCE: T1 подтверждён; разрешаю запуск T2")
+
+            val secondSucceeded = launchAndWait(
+                "T2", second, openedSecond, repository
+            )
+
+            appendLog(
+                if (secondSucceeded) {
+                    "RESULT: оба сценария успешно включены последовательно"
+                } else {
+                    "RESULT: T1 включён; T2 не подтвердил переход состояния"
                 }
-            }
-            submittedTasks++
-
-            workers.submit {
-                try {
-                    executeTask(
-                        "T2", second, ready, startGate, launchReady,
-                        launchGate, abortBeforeLaunch
-                    )
-                } finally {
-                    completed.countDown()
-                }
-            }
-            submittedTasks++
-
-            val bothReady = ready.await(40, TimeUnit.SECONDS)
-            if (!bothReady || abortBeforeLaunch.get()) {
-                abortBeforeLaunch.set(true)
-                appendLog("ABORT: обе задачи не подготовились; запуск не выполняется.")
-            } else {
-                appendLog("BARRIER: обе сессии готовы; общий старт.")
-            }
-
-            startGate.countDown()
-
-            val bothLaunchReady = launchReady.await(45, TimeUnit.SECONDS)
-            if (!bothLaunchReady || abortBeforeLaunch.get()) {
-                abortBeforeLaunch.set(true)
-                appendLog("ABORT: оба вызова не подготовлены; запуск отменён.")
-            } else {
-                appendLog("LAUNCH BARRIER: оба потока готовы; разрешаю оба вызова.")
-            }
-            launchGate.countDown()
-
-            if (!completed.await(90, TimeUnit.SECONDS)) {
-                appendLog(
-                    "TIMEOUT: задачи ещё работают. " +
-                        "Ожидаю фактического завершения; повторный тест запрещён."
-                )
-                completed.await()
-            }
-
-            appendLog("TEST FINISHED: обе задачи завершены.")
+            )
         } catch (error: Throwable) {
-            abortBeforeLaunch.set(true)
-            appendLog("COORDINATOR ERROR: ${error.javaClass.simpleName}: ${error.message}")
+            appendLog("TEST ERROR: ${error.javaClass.simpleName}: ${error.message}")
         } finally {
-            abortBeforeLaunch.set(true)
-            startGate.countDown()
-            launchGate.countDown()
-
-            // Если отправка одной из задач не удалась, компенсируем её счётчик.
-            repeat(2 - submittedTasks) {
-                completed.countDown()
-            }
-
-            // Не объявляем тест завершённым, пока отправленные задачи не выйдут из finally.
-            var interrupted = false
-            while (completed.count > 0) {
-                try {
-                    completed.await()
-                } catch (_: InterruptedException) {
-                    interrupted = true
-                }
-            }
+            closeSession("T2", secondSession)
+            closeSession("T1", firstSession)
 
             running.set(false)
             runOnUiThread {
@@ -204,134 +189,78 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
                     startButton.isEnabled = true
                 }
             }
-
-            if (interrupted) {
-                Thread.currentThread().interrupt()
-            }
+            appendLog("TEST FINISHED")
         }
     }
 
-    private fun executeTask(
+    private fun launchAndWait(
         label: String,
         routineId: Long,
-        ready: CountDownLatch,
-        startGate: CountDownLatch,
-        launchReady: CountDownLatch,
-        launchGate: CountDownLatch,
-        abortBeforeLaunch: AtomicBoolean
-    ) {
-        var session: RootCoreSession? = null
-        var readyReported = false
-        var launchReadyReported = false
+        session: RootCoreSession,
+        repository: ManualRoutineRepository
+    ): Boolean {
+        val extras = Bundle().apply {
+            putLong("EXTRA_KEY_ROUTINE_UUID", routineId)
+        }
+        val component = ComponentName(
+            "com.samsung.android.app.routines",
+            "com.samsung.android.app.routines.ui.shortcut.ShortcutLaunchActivity"
+        )
+
+        val launchStarted = SystemClock.elapsedRealtime()
+        appendLog("$label: LAUNCH CALL BEGIN")
+        session.launchActivity(component, null, extras, 0x10008000)
+        appendLog(
+            "$label: LAUNCH CALL END; duration=" +
+                "${SystemClock.elapsedRealtime() - launchStarted}ms"
+        )
+
+        val pollStarted = SystemClock.elapsedRealtime()
+        val deadline = pollStarted + 5_000L
+        var poll = 0
+
+        while (SystemClock.elapsedRealtime() < deadline) {
+            SystemClock.sleep(250L)
+            poll++
+
+            val routine = repository.load(session)
+                .firstOrNull { it.uuid == routineId }
+                ?: error("$label: UUID=$routineId исчез из Provider")
+
+            val current = routine.isRunning
+                ?: error("$label: Provider вернул неизвестный is_running")
+
+            appendLog("$label: POLL#$poll is_running=$current")
+
+            if (current) {
+                appendLog(
+                    "$label: STATE CHANGED false -> true in " +
+                        "${SystemClock.elapsedRealtime() - pollStarted}ms"
+                )
+                return true
+            }
+        }
+
+        appendLog("$label: NO STATE CHANGE within 5000ms")
+        return false
+    }
+
+    private fun closeSession(label: String, session: RootCoreSession?) {
+        if (session == null) return
 
         try {
-            val openStarted = SystemClock.elapsedRealtime()
-            appendLog("$label: OPEN")
-            val opened = RootCore.open(applicationContext, 30_000L)
-            session = opened
-            appendLog("$label: OPEN OK ${SystemClock.elapsedRealtime() - openStarted} ms")
-
-            val pingStarted = SystemClock.elapsedRealtime()
-            val uid = opened.ping()
-            check(uid == 0) { "ожидался UID 0, получен $uid" }
-            appendLog("$label: PING OK uid=$uid ${SystemClock.elapsedRealtime() - pingStarted} ms")
-
-            val repository = ManualRoutineRepository(applicationContext)
-            val routine = repository.load(opened).firstOrNull { it.uuid == routineId }
-                ?: error("UUID=$routineId отсутствует в Samsung Provider")
-            check(routine.isEnabled == true) {
-                "Сценарий '${routine.name}' не включён или is_enabled неизвестен"
-            }
-            val initialRunning = routine.isRunning
-                ?: error("Provider не вернул is_running для '${routine.name}'")
-
+            val closeStarted = SystemClock.elapsedRealtime()
+            session.close()
+            val stopped = session.awaitTermination(5_000L)
             appendLog(
-                "$label: READY '${routine.name}', enabled=${routine.isEnabled}, " +
-                    "is_running=$initialRunning"
+                "$label: CLOSE stopped=$stopped " +
+                    "alive=${session.isRootProcessAlive()} " +
+                    "in ${SystemClock.elapsedRealtime() - closeStarted}ms"
             )
-            readyReported = true
-            ready.countDown()
-
-            check(startGate.await(45, TimeUnit.SECONDS)) {
-                "истекло ожидание общего старта"
-            }
-            if (abortBeforeLaunch.get()) {
-                appendLog("$label: ABORTED BEFORE LAUNCH")
-                return
-            }
-
-            val extras = Bundle().apply {
-                putLong("EXTRA_KEY_ROUTINE_UUID", routineId)
-            }
-            val component = ComponentName(
-                "com.samsung.android.app.routines",
-                "com.samsung.android.app.routines.ui.shortcut.ShortcutLaunchActivity"
-            )
-
-            appendLog("$label: LAUNCH READY")
-            launchReadyReported = true
-            launchReady.countDown()
-
-            check(launchGate.await(45, TimeUnit.SECONDS)) {
-                "истекло ожидание разрешения конкурентного запуска"
-            }
-            check(!abortBeforeLaunch.get()) {
-                "конкурентный запуск отменён"
-            }
-
-            val launchStarted = SystemClock.elapsedRealtime()
-            appendLog("$label: LAUNCH CALL BEGIN at +${launchStarted - screenStartedAt}ms")
-            opened.launchActivity(component, null, extras, 0x10008000)
-            val launchFinished = SystemClock.elapsedRealtime()
-            appendLog(
-                "$label: LAUNCH CALL END at +${launchFinished - screenStartedAt}ms; " +
-                    "duration=${launchFinished - launchStarted}ms"
-            )
-
-            val pollStarted = SystemClock.elapsedRealtime()
-            val deadline = pollStarted + 5_000L
-            var currentRunning = initialRunning
-            var poll = 0
-
-            while (currentRunning == initialRunning &&
-                SystemClock.elapsedRealtime() < deadline) {
-                SystemClock.sleep(250L)
-                poll++
-                val current = repository.load(opened).firstOrNull { it.uuid == routineId }
-                    ?: error("UUID=$routineId исчез из Provider во время опроса")
-                currentRunning = current.isRunning
-                    ?: error("Provider вернул неизвестное is_running при опросе")
-                appendLog("$label: POLL#$poll is_running=$currentRunning")
-            }
-
-            if (currentRunning != initialRunning) {
-                appendLog(
-                    "$label: STATE CHANGED $initialRunning -> $currentRunning " +
-                        "in ${SystemClock.elapsedRealtime() - pollStarted} ms"
-                )
-            } else {
-                appendLog("$label: NO STATE CHANGE within 5000 ms")
-            }
         } catch (error: Throwable) {
-            abortBeforeLaunch.set(true)
-            appendLog("$label: ERROR ${error.javaClass.simpleName}: ${error.message}")
-        } finally {
-            if (!readyReported) ready.countDown()
-            if (!launchReadyReported) launchReady.countDown()
-            if (session != null) {
-                try {
-                    val closeStarted = SystemClock.elapsedRealtime()
-                    session.close()
-                    val stopped = session.awaitTermination(5_000L)
-                    appendLog(
-                        "$label: CLOSE stopped=$stopped " +
-                            "alive=${session.isRootProcessAlive()} " +
-                            "in ${SystemClock.elapsedRealtime() - closeStarted} ms"
-                    )
-                } catch (error: Throwable) {
-                    appendLog("$label: CLOSE ERROR ${error.javaClass.simpleName}: ${error.message}")
-                }
-            }
+            appendLog(
+                "$label: CLOSE ERROR ${error.javaClass.simpleName}: ${error.message}"
+            )
         }
     }
 
