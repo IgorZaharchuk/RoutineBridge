@@ -5,78 +5,58 @@ import android.content.Context
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
-import com.routinebridge.rootcore.RootCoreSession
-import java.util.concurrent.ConcurrentHashMap
 
-class RoutineActionExecutor(
-    private val context: Context,
+internal enum class RoutineExecutionStatus {
+    SUCCESS,
+    SKIPPED,
+    TIMEOUT
+}
+
+internal data class RoutineExecutionResult(
+    val status: RoutineExecutionStatus,
+    val routineUuid: Long,
+    val routineName: String,
+    val targetState: Boolean,
+    val actualState: Boolean?
+)
+
+internal class RoutineActionExecutor(
+    context: Context,
     private val repository: ManualRoutineRepository =
-        ManualRoutineRepository(context),
+        ManualRoutineRepository(context)
 ) {
+    private val appContext = context.applicationContext
     private val localizedContext = AppLocale.wrap(context)
 
-    fun execute(input: RoutineInput, requestId: String): String? {
-        val now = SystemClock.elapsedRealtime()
-        var accepted = false
-
-        lastAcceptedInputAt.compute(input.id) { _, previous ->
-            if (previous == null || now - previous >= DEBOUNCE_INTERVAL_MS) {
-                accepted = true
-                now
-            } else {
-                previous
-            }
-        }
-
-        if (!accepted) {
-            Log.i(
-                LOG_TAG,
-                "INPUT_DEBOUNCED request=$requestId input=${input.id} " +
-                    "window=${DEBOUNCE_INTERVAL_MS}ms"
-            )
-            return null
-        }
-
-        val routineLock = routineLocks.computeIfAbsent(
-            input.routineUuid.toString()
-        ) { Any() }
-
-        return synchronized(routineLock) {
-            executeLocked(input, requestId)
-        }
-    }
-
-    private fun executeLocked(input: RoutineInput, requestId: String): String {
+    /**
+     * Performs exactly one physical Samsung launch operation.
+     *
+     * Queueing, coalescing and serialization belong to the dispatcher.
+     * This class does not debounce, lock UUIDs or retry timed-out launches.
+     */
+    fun executeOnce(
+        routineUuid: Long,
+        targetState: Boolean,
+        requestId: String
+    ): RoutineExecutionResult {
         Log.i(
             LOG_TAG,
-            "EXEC_START request=$requestId input=${input.id} " +
-                "action=${input.action} uuid=${input.routineUuid}"
+            "EXEC_ONCE_START request=$requestId uuid=$routineUuid target=$targetState"
         )
 
-        val session = RootCoreAccess.open(context)
+        val session = RootCoreAccess.open(appContext)
 
         try {
             check(session.ping() == 0) {
                 localizedContext.getString(R.string.root_core_invalid_uid)
             }
 
-            return executeSamsungLocked(input, requestId, session)
-        } finally {
-            RootCoreAccess.close(session)
-        }
-    }
-
-    private fun executeSamsungLocked(
-        input: RoutineInput,
-        requestId: String,
-        session: com.routinebridge.rootcore.RootCoreSession
-    ): String {
             val routine = repository.load(session).firstOrNull {
-                it.uuid == input.routineUuid
+                it.uuid == routineUuid
             } ?: throw IllegalStateException(
                 localizedContext.getString(
                     R.string.routine_not_found,
-                    input.routineName
+                    routineUuid.toString()
                 )
             )
 
@@ -99,28 +79,25 @@ class RoutineActionExecutor(
                 localizedContext.getString(R.string.routine_state_unknown)
             )
 
-            val target = when (input.action) {
-                RoutineInputAction.ENABLE -> true
-                RoutineInputAction.DISABLE -> false
-                RoutineInputAction.TOGGLE -> !current
-            }
-
-            if (current == target) {
-                return localizedContext.getString(
-                    R.string.routine_already_state,
-                    routine.name,
-                    localizedContext.getString(
-                        if (target) R.string.state_enabled
-                        else R.string.state_disabled
-                    )
+            if (current == targetState) {
+                Log.i(
+                    LOG_TAG,
+                    "EXEC_ONCE_SKIPPED request=$requestId uuid=$routineUuid state=$current"
+                )
+                return RoutineExecutionResult(
+                    status = RoutineExecutionStatus.SKIPPED,
+                    routineUuid = routineUuid,
+                    routineName = routine.name,
+                    targetState = targetState,
+                    actualState = current
                 )
             }
 
             val extras = Bundle().apply {
-                putLong("EXTRA_KEY_ROUTINE_UUID", routine.uuid)
+                putLong("EXTRA_KEY_ROUTINE_UUID", routineUuid)
             }
 
-            Log.i(LOG_TAG, "SAMSUNG_LAUNCH request=$requestId")
+            Log.i(LOG_TAG, "SAMSUNG_LAUNCH request=$requestId uuid=$routineUuid")
             val launchStart = SystemClock.elapsedRealtime()
 
             session.launchActivity(
@@ -139,65 +116,55 @@ class RoutineActionExecutor(
                     "elapsed=${SystemClock.elapsedRealtime() - launchStart}ms"
             )
 
-            val deadline = SystemClock.elapsedRealtime() + 5_000L
-            var updated = repository.load(session).firstOrNull {
-                it.uuid == routine.uuid
-            }
+            val deadline = SystemClock.elapsedRealtime() + CONFIRMATION_TIMEOUT_MS
+            var actual = repository.load(session).firstOrNull {
+                it.uuid == routineUuid
+            }?.isRunning
 
-            while (updated?.isRunning != target &&
+            while (actual != targetState &&
                 SystemClock.elapsedRealtime() < deadline
             ) {
-                Thread.sleep(250L)
-                updated = repository.load(session).firstOrNull {
-                    it.uuid == routine.uuid
-                }
+                Thread.sleep(PROVIDER_POLL_INTERVAL_MS)
+                actual = repository.load(session).firstOrNull {
+                    it.uuid == routineUuid
+                }?.isRunning
             }
 
-            Log.i(
+            if (actual == targetState) {
+                Log.i(
+                    LOG_TAG,
+                    "EXEC_ONCE_SUCCESS request=$requestId uuid=$routineUuid state=$actual"
+                )
+                return RoutineExecutionResult(
+                    status = RoutineExecutionStatus.SUCCESS,
+                    routineUuid = routineUuid,
+                    routineName = routine.name,
+                    targetState = targetState,
+                    actualState = actual
+                )
+            }
+
+            Log.w(
                 LOG_TAG,
-                "STATE_AFTER request=$requestId " +
-                    "expected=$target actual=${updated?.isRunning}"
+                "EXEC_ONCE_TIMEOUT request=$requestId uuid=$routineUuid " +
+                    "expected=$targetState actual=$actual"
             )
 
-            if (updated?.isRunning != target) {
-                val actual = updated?.isRunning?.let {
-                    localizedContext.getString(
-                        if (it) R.string.state_enabled
-                        else R.string.state_disabled
-                    )
-                } ?: localizedContext.getString(R.string.state_unknown)
-
-                val expected = localizedContext.getString(
-                    if (target) R.string.state_enabled
-                    else R.string.state_disabled
-                )
-
-                throw IllegalStateException(
-                    localizedContext.getString(
-                        R.string.routine_state_not_confirmed,
-                        expected,
-                        actual
-                    )
-                )
-            }
-
-            return localizedContext.getString(
-                R.string.routine_action_success,
-                routine.name,
-                localizedContext.getString(
-                    if (target) R.string.state_enabled
-                    else R.string.state_disabled
-                )
+            return RoutineExecutionResult(
+                status = RoutineExecutionStatus.TIMEOUT,
+                routineUuid = routineUuid,
+                routineName = routine.name,
+                targetState = targetState,
+                actualState = actual
             )
+        } finally {
+            RootCoreAccess.close(session)
+        }
     }
 
     private companion object {
         const val LOG_TAG = "RoutineBridge"
-
-        const val DEBOUNCE_INTERVAL_MS = 500L
-
-        val lastAcceptedInputAt = ConcurrentHashMap<String, Long>()
-        val routineLocks = ConcurrentHashMap<String, Any>()
-
+        const val PROVIDER_POLL_INTERVAL_MS = 100L
+        const val CONFIRMATION_TIMEOUT_MS = 1_500L
     }
 }

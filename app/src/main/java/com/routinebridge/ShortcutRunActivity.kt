@@ -20,7 +20,7 @@ class ShortcutRunActivity : Activity() {
                 "inputId=${intent?.getStringExtra(MainActivity.EXTRA_INPUT_ID)} " +
                 "component=${intent?.component?.flattenToShortString()}"
         )
-        executeInput(intent)
+        enqueueInput(intent)
     }
 
     private fun openMainActivityWithError(message: String) {
@@ -32,84 +32,58 @@ class ShortcutRunActivity : Activity() {
         finish()
     }
 
-    private fun executeInput(intent: Intent?) {
+    private fun enqueueInput(intent: Intent?) {
         if (intent?.action != MainActivity.ACTION_RUN_INPUT) {
-            Log.e(
-                LOG_TAG,
-                "SHORTCUT_INTENT_REJECTED action=${intent?.action} " +
-                    "inputId=${intent?.getStringExtra(MainActivity.EXTRA_INPUT_ID)}"
-            )
+            Log.e(LOG_TAG, "SHORTCUT_INTENT_REJECTED action=${intent?.action}")
             finish()
             return
         }
 
         val id = intent.getStringExtra(MainActivity.EXTRA_INPUT_ID)
         if (id == null) {
-            Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=input_id_missing")
             openMainActivityWithError(getString(R.string.shortcut_id_missing))
             return
         }
 
         val input = try {
             RoutineInputStore(this).load().firstOrNull { it.id == id }
-        } catch (e: Exception) {
-            Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=settings_load_failed", e)
-            openMainActivityWithError(
-                getString(R.string.shortcut_settings_load_failed)
-            )
+        } catch (error: Exception) {
+            Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR settings_load_failed", error)
+            openMainActivityWithError(getString(R.string.shortcut_settings_load_failed))
             return
         }
 
         if (input == null) {
-            Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=input_not_found id=$id")
-            openMainActivityWithError(
-                getString(R.string.shortcut_input_missing)
-            )
+            Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR input_not_found id=$id")
+            openMainActivityWithError(getString(R.string.shortcut_input_missing))
             return
         }
 
         val requestId = UUID.randomUUID().toString().take(8)
         Log.i(
             LOG_TAG,
-            "SHORTCUT_EXECUTE_START request=$requestId inputId=${input.id} " +
+            "SHORTCUT_SERVICE_START request=$requestId inputId=${input.id} " +
                 "routineUuid=${input.routineUuid} action=${input.action}"
         )
 
-        Thread {
-            var errorMessage: String? = null
-            try {
-                val result = RoutineActionExecutor(
-                    context = applicationContext
-                ).execute(input, requestId)
+        val serviceIntent = Intent(this, SamsungRoutineService::class.java).apply {
+            putExtra(SamsungRoutineService.EXTRA_INPUT_ID, input.id)
+            putExtra(SamsungRoutineService.EXTRA_LABEL, input.label)
+            putExtra(SamsungRoutineService.EXTRA_ROUTINE_UUID, input.routineUuid)
+            putExtra(SamsungRoutineService.EXTRA_ROUTINE_NAME, input.routineName)
+            putExtra(SamsungRoutineService.EXTRA_ACTION, input.action.name)
+            putExtra(SamsungRoutineService.EXTRA_REQUEST_ID, requestId)
+        }
 
-                if (result == null) {
-                    Log.i(
-                        LOG_TAG,
-                        "SHORTCUT_RUN_DEBOUNCED request=$requestId inputId=${input.id}"
-                    )
-                } else {
-                    Log.i(
-                        LOG_TAG,
-                        "SHORTCUT_RUN_FINISHED request=$requestId result=$result"
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e(LOG_TAG, "SHORTCUT_RUN_FAILED request=$requestId error=${e.message}", e)
-                errorMessage = if (e is RootCoreAccessException) {
-                    getString(R.string.root_access_unavailable)
-                } else {
-                    e.message ?: getString(R.string.action_failed)
-                }
-            }
-
-            runOnUiThread {
-                if (errorMessage != null) {
-                    openMainActivityWithError(errorMessage!!)
-                } else {
-                    finish()
-                }
-            }
-        }.start()
+        try {
+            startForegroundService(serviceIntent)
+            finish()
+        } catch (error: Exception) {
+            Log.e(LOG_TAG, "SHORTCUT_SERVICE_START_FAILED request=$requestId", error)
+            openMainActivityWithError(
+                error.message ?: getString(R.string.action_failed)
+            )
+        }
     }
 
     companion object {

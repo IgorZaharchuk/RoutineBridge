@@ -6,6 +6,10 @@
         <package android:name="com.samsung.android.app.routines" />
     </queries>
 
+        <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+        <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -29,5 +33,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-    </application>
+            <service
+            android:name=".SamsungRoutineService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Execute user-triggered Samsung routine commands" />
+        </service>
+
+</application>
 </manifest>

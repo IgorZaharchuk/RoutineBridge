@@ -79,4 +79,8 @@
         <item quantity="other">%1$d входа</item>
     </plurals>
     <string name="root_core_invalid_uid">Root Core работает не с UID 0.</string>
+    <string name="routine_service_channel_name">Выполнение сценариев</string>
+    <string name="routine_service_channel_description">Выполнение команд сценариев Samsung</string>
+    <string name="routine_service_notification_title">RoutineBridge</string>
+    <string name="routine_service_notification_text">Выполняются сценарии Samsung</string>
 </resources>

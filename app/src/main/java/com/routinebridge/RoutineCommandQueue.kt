@@ -7,31 +7,33 @@ internal data class RoutineCommandSnapshot(
     val transform: BooleanStateTransform
 )
 
-/**
- * Thread-safe command accumulator.
- *
- * There is at most one in-flight routine. Commands for that UUID continue
- * composing into the in-flight transformation. All other UUIDs are coalesced
- * in insertion order, regardless of commands for other UUIDs between them.
- */
+internal data class RoutinePendingToken(
+    val routineUuid: Long,
+    val revision: Long
+)
+
 internal class RoutineCommandQueue {
+
+    private data class Pending(
+        val transform: BooleanStateTransform,
+        val revision: Long
+    )
 
     private data class InFlight(
         val routineUuid: Long,
         val baselineState: Boolean,
         var transform: BooleanStateTransform
-    )
+    ) {
+        fun snapshot() = RoutineCommandSnapshot(routineUuid, transform)
+        fun desiredState() = transform.applyTo(baselineState)
+    }
 
-    private val pending =
-        LinkedHashMap<Long, BooleanStateTransform>()
-
+    private val pending = LinkedHashMap<Long, Pending>()
     private var inFlight: InFlight? = null
+    private var nextRevision = 0L
 
     @Synchronized
-    fun enqueue(
-        routineUuid: Long,
-        transform: BooleanStateTransform
-    ) {
+    fun enqueue(routineUuid: Long, transform: BooleanStateTransform) {
         if (transform == BooleanStateTransform.IDENTITY) return
 
         val active = inFlight
@@ -40,67 +42,74 @@ internal class RoutineCommandQueue {
             return
         }
 
-        val combined = (pending[routineUuid]
+        val combined = (pending[routineUuid]?.transform
             ?: BooleanStateTransform.IDENTITY).then(transform)
 
         if (combined == BooleanStateTransform.IDENTITY) {
             pending.remove(routineUuid)
         } else {
-            // Updating an existing LinkedHashMap value preserves its position.
-            pending[routineUuid] = combined
+            pending[routineUuid] = Pending(combined, ++nextRevision)
         }
     }
 
     @Synchronized
-    fun beginNext(baselineState: Boolean): RoutineCommandSnapshot? {
-        if (inFlight != null || pending.isEmpty()) return null
+    fun nextPendingUuid(): Long? = pending.keys.firstOrNull()
 
-        val first = pending.entries.first()
-        pending.remove(first.key)
-
-        inFlight = InFlight(
-            routineUuid = first.key,
-            baselineState = baselineState,
-            transform = first.value
-        )
-
-        return inFlight!!.snapshot()
+    @Synchronized
+    fun pendingToken(routineUuid: Long): RoutinePendingToken? {
+        val entry = pending[routineUuid] ?: return null
+        return RoutinePendingToken(routineUuid, entry.revision)
     }
 
     @Synchronized
-    fun inFlightSnapshot(): RoutineCommandSnapshot? =
-        inFlight?.snapshot()
-
-    @Synchronized
-    fun inFlightDesiredState(): Boolean? {
-        val active = inFlight ?: return null
-        return active.transform.applyTo(active.baselineState)
+    fun discardPending(token: RoutinePendingToken): Boolean {
+        val current = pending[token.routineUuid] ?: return false
+        if (current.revision != token.revision) return false
+        pending.remove(token.routineUuid)
+        return true
     }
 
-    /**
-     * Completes the active UUID only when the actual Provider state matches
-     * the latest desired state, including commands received during execution.
-     */
+    @Synchronized
+    fun beginNext(
+        routineUuid: Long,
+        baselineState: Boolean
+    ): RoutineCommandSnapshot? {
+        if (inFlight != null) return null
+        if (pending.keys.firstOrNull() != routineUuid) return null
+
+        val entry = pending.remove(routineUuid) ?: return null
+        val active = InFlight(routineUuid, baselineState, entry.transform)
+        inFlight = active
+        return active.snapshot()
+    }
+
+    @Synchronized
+    fun inFlightSnapshot(): RoutineCommandSnapshot? = inFlight?.snapshot()
+
+    @Synchronized
+    fun inFlightDesiredState(): Boolean? = inFlight?.desiredState()
+
     @Synchronized
     fun completeIfSatisfied(actualState: Boolean): Boolean {
         val active = inFlight ?: return false
-        val desired = active.transform.applyTo(active.baselineState)
-
-        if (actualState != desired) return false
-
+        if (actualState != active.desiredState()) return false
         inFlight = null
         return true
     }
 
     @Synchronized
+    fun releaseInFlight(): RoutineCommandSnapshot? {
+        val active = inFlight ?: return null
+        inFlight = null
+        return active.snapshot()
+    }
+
+    @Synchronized
     fun pendingSnapshot(): List<RoutineCommandSnapshot> =
-        pending.map { (uuid, transform) ->
-            RoutineCommandSnapshot(uuid, transform)
+        pending.map { (uuid, entry) ->
+            RoutineCommandSnapshot(uuid, entry.transform)
         }
 
     @Synchronized
     fun hasInFlight(): Boolean = inFlight != null
-
-    private fun InFlight.snapshot() =
-        RoutineCommandSnapshot(routineUuid, transform)
 }

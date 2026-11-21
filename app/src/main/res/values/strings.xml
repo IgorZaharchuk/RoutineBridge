@@ -77,4 +77,8 @@
         <item quantity="other">%1$d inputs</item>
     </plurals>
     <string name="root_core_invalid_uid">Root Core is not running as UID 0.</string>
+    <string name="routine_service_channel_name">Routine execution</string>
+    <string name="routine_service_channel_description">Execution of Samsung routine commands</string>
+    <string name="routine_service_notification_title">RoutineBridge</string>
+    <string name="routine_service_notification_text">Executing Samsung routines</string>
 </resources>
