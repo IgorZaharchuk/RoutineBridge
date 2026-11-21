@@ -24,6 +24,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.UUID;
 
 public final class RootCoreSession implements AutoCloseable {
 
@@ -58,7 +59,8 @@ public final class RootCoreSession implements AutoCloseable {
         int uid = Process.myUid();
         int userId = uid / 100000;
         String packageName = context.getPackageName();
-        String action = packageName + ".ROOTCORE_BIND";
+        String sessionId = UUID.randomUUID().toString();
+        String action = packageName + ".ROOTCORE_BIND." + sessionId;
 
         CountDownLatch connected = new CountDownLatch(1);
         AtomicReference<IRootCoreManager> remoteRef = new AtomicReference<>();
@@ -71,6 +73,13 @@ public final class RootCoreSession implements AutoCloseable {
         BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context ignored, Intent intent) {
+                if (!sessionId.equals(intent.getStringExtra("extra.session_id"))) {
+                    android.util.Log.w(
+                            "RoutineBridgeRootCore",
+                            "Ignoring Binder broadcast for another session"
+                    );
+                    return;
+                }
                 boolean accepted = false;
                 try {
                     Bundle extras = intent.getBundleExtra("extra.bundle");
@@ -149,7 +158,8 @@ public final class RootCoreSession implements AutoCloseable {
                     " app_process /system/bin " +
                     "com.routinebridge.rootcore.bootstrap.RootServerMain " +
                     shellQuote(packageName) + " " +
-                    uid + " " + userId + " >/dev/null 2>&1";
+                    uid + " " + userId + " " +
+                    shellQuote(sessionId) + " >/dev/null 2>&1";
 
             process = new ProcessBuilder("su", "-c", command)
                     .redirectErrorStream(true)

@@ -21,6 +21,7 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
 
     private final Context context;
     private final int clientUid;
+    private final String sessionId;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private IBinder clientToken;
@@ -30,9 +31,13 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
 
     private final Runnable idleShutdown = this::shutdown;
 
-    public RootCoreServer(Context context, int clientUid) {
+    public RootCoreServer(Context context, int clientUid, String sessionId) {
+        if (sessionId == null || sessionId.isEmpty()) {
+            throw new IllegalArgumentException("Session ID is empty");
+        }
         this.context = context;
         this.clientUid = clientUid;
+        this.sessionId = sessionId;
     }
 
     public void start() {
@@ -42,8 +47,11 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
 
         handler.postDelayed(idleShutdown, IDLE_TIMEOUT_MS);
 
-        Intent intent = new Intent(context.getPackageName() + ".ROOTCORE_BIND");
+        Intent intent = new Intent(
+                context.getPackageName() + ".ROOTCORE_BIND." + sessionId
+        );
         intent.setPackage(context.getPackageName());
+        intent.putExtra("extra.session_id", sessionId);
         intent.addFlags(0x00400000); // FLAG_RECEIVER_FROM_SHELL
         Bundle binderBundle = new Bundle();
         binderBundle.putBinder("binder", asBinder());

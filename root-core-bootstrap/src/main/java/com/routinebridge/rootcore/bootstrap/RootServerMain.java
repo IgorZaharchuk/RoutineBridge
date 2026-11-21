@@ -12,13 +12,19 @@ public final class RootServerMain {
 
     public static void main(String[] args) {
         try {
-            if (args == null || args.length != 3) {
-                throw new IllegalArgumentException("Expected package, client UID and user ID");
+            if (args == null || args.length != 4) {
+                throw new IllegalArgumentException(
+                        "Expected package, client UID, user ID and session ID"
+                );
             }
 
             String packageName = args[0];
             int clientUid = Integer.parseInt(args[1]);
             int userId = Integer.parseInt(args[2]);
+            String sessionId = args[3];
+            if (sessionId.isEmpty()) {
+                throw new IllegalArgumentException("Session ID is empty");
+            }
 
             Looper.prepareMainLooper();
 
@@ -39,8 +45,8 @@ public final class RootServerMain {
             );
 
             Object server = serverClass
-                    .getConstructor(Context.class, int.class)
-                    .newInstance(packageContext, clientUid);
+                    .getConstructor(Context.class, int.class, String.class)
+                    .newInstance(packageContext, clientUid, sessionId);
 
             serverClass.getMethod("start").invoke(server);
 
