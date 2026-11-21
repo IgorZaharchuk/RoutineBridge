@@ -16,9 +16,14 @@ class RoutineActionExecutor(
     private val localizedContext = AppLocale.wrap(context)
 
     fun execute(input: RoutineInput, requestId: String): String {
-        val lock = routineLocks.computeIfAbsent(input.routineUuid.toString()) { Any() }
-        return synchronized(lock) {
-            executeLocked(input, requestId)
+        val inputLock = inputLocks.computeIfAbsent(input.id) { Any() }
+        return synchronized(inputLock) {
+            val routineLock = routineLocks.computeIfAbsent(
+                input.routineUuid.toString()
+            ) { Any() }
+            synchronized(routineLock) {
+                executeLocked(input, requestId)
+            }
         }
     }
 
@@ -36,6 +41,19 @@ class RoutineActionExecutor(
                 localizedContext.getString(R.string.root_core_invalid_uid)
             }
 
+            return synchronized(samsungOperationLock) {
+                executeSamsungLocked(input, requestId, session)
+            }
+        } finally {
+            RootCoreAccess.close(session)
+        }
+    }
+
+    private fun executeSamsungLocked(
+        input: RoutineInput,
+        requestId: String,
+        session: com.routinebridge.rootcore.RootCoreSession
+    ): String {
             val routine = repository.load(session).firstOrNull {
                 it.uuid == input.routineUuid
             } ?: throw IllegalStateException(
@@ -154,13 +172,15 @@ class RoutineActionExecutor(
                     else R.string.state_disabled
                 )
             )
-        } finally {
-            RootCoreAccess.close(session)
-        }
     }
 
     private companion object {
         const val LOG_TAG = "RoutineBridge"
+
+        val inputLocks = ConcurrentHashMap<String, Any>()
         val routineLocks = ConcurrentHashMap<String, Any>()
+
+        // Samsung Provider and Routine UI must not be accessed concurrently.
+        val samsungOperationLock = Any()
     }
 }
