@@ -1,0 +1,402 @@
+package com.routinebridge
+
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.graphics.Color
+import android.os.Bundle
+import android.os.SystemClock
+import android.view.Gravity
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
+import com.routinebridge.rootcore.RootCore
+import com.routinebridge.rootcore.RootCoreSession
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+
+class RootCoreDiagnosticsActivity : Activity() {
+
+    private val workers = Executors.newFixedThreadPool(3)
+    private val running = AtomicBoolean(false)
+
+    private lateinit var output: TextView
+    private lateinit var firstId: EditText
+    private lateinit var secondId: EditText
+    private lateinit var startButton: Button
+
+    private val repository by lazy { ManualRoutineRepository(this) }
+
+    private val bg = Color.rgb(18, 18, 18)
+    private val white = Color.WHITE
+    private val secondary = Color.rgb(200, 205, 215)
+    private val blue = Color.rgb(55, 75, 105)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(20))
+            setBackgroundColor(bg)
+        }
+
+        content.addView(text("Root Core — параллельный тест", 21f, white))
+        content.addView(text(
+            "Две независимые задачи, два Root Core процесса и две отдельные " +
+                "сессии. После подготовки обе задачи одновременно запускают " +
+                "Samsung ShortcutLaunchActivity и независимо проверяют Provider.",
+            14f, secondary
+        ))
+
+        firstId = editField("UUID первого ручного сценария")
+        secondId = editField("UUID второго ручного сценария")
+        content.addView(firstId)
+        content.addView(secondId)
+
+        startButton = addButton(content, "Запустить параллельный тест") {
+            startTest()
+        }
+
+        addButton(content, "Очистить журнал") {
+            output.text = "Журнал очищен."
+        }
+
+        addButton(content, "Скопировать диагностику") {
+            val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(
+                ClipData.newPlainText("Root Core parallel diagnostics", output.text)
+            )
+            Toast.makeText(this, "Диагностика скопирована", Toast.LENGTH_SHORT).show()
+        }
+
+        output = text("Здесь появится подробный журнал теста.", 13f, secondary).apply {
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setBackgroundColor(Color.rgb(30, 30, 30))
+            setTextIsSelectable(true)
+        }
+        content.addView(output)
+
+        val scroll = ScrollView(this)
+        scroll.addView(content)
+        setContentView(scroll)
+    }
+
+    private fun startTest() {
+        val id1 = firstId.text.toString().trim().toLongOrNull()
+        val id2 = secondId.text.toString().trim().toLongOrNull()
+
+        if (id1 == null || id2 == null) {
+            appendLog("ОШИБКА: введи два числовых UUID.")
+            return
+        }
+        if (id1 == id2) {
+            appendLog("ОШИБКА: UUID должны быть разными.")
+            return
+        }
+        if (!running.compareAndSet(false, true)) {
+            appendLog("Тест уже выполняется.")
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Подтвердить параллельный запуск?")
+            .setMessage(
+                "Будут запущены два сценария:\n\n" +
+                    "UUID=$id1\nUUID=$id2\n\n" +
+                    "ShortcutLaunchActivity переключает состояние сценария. " +
+                    "Каждый сценарий будет запущен ровно один раз. " +
+                    "Исходные состояния будут записаны в журнал."
+            )
+            .setNegativeButton("Отмена") { _, _ ->
+                running.set(false)
+            }
+            .setPositiveButton("Запустить") { _, _ ->
+                startButton.isEnabled = false
+                output.text = ""
+                appendLog("========== PARALLEL TEST ==========")
+                appendLog("UUID-1=$id1 UUID-2=$id2")
+                appendLog("Создание двух независимых задач.")
+                runParallel(id1, id2)
+            }
+            .setOnCancelListener {
+                running.set(false)
+            }
+            .show()
+    }
+
+    private fun runParallel(id1: Long, id2: Long) {
+        workers.execute {
+            val ready = CountDownLatch(2)
+            val startGate = CountDownLatch(1)
+
+            val first = workers.submit<String> {
+                executeTask("T1", id1, ready, startGate)
+            }
+            val second = workers.submit<String> {
+                executeTask("T2", id2, ready, startGate)
+            }
+
+            try {
+                appendLog("COORDINATOR: ожидание готовности обеих задач.")
+                val bothReady = ready.await(40, TimeUnit.SECONDS)
+
+                appendLog(
+                    "COORDINATOR: ready=$bothReady; " +
+                        "одновременный старт разрешён."
+                )
+                startGate.countDown()
+
+                val result1 = first.get()
+                val result2 = second.get()
+
+                appendLog("========== TEST FINISHED ==========")
+                appendLog("T1: $result1")
+                appendLog("T2: $result2")
+            } catch (error: Throwable) {
+                startGate.countDown()
+                appendLog(
+                    "COORDINATOR ERROR: ${error.javaClass.simpleName}: " +
+                        "${error.message}"
+                )
+            } finally {
+                running.set(false)
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        startButton.isEnabled = true
+                    }
+                }
+            }
+        }
+    }
+
+    private fun executeTask(
+        taskId: String,
+        routineId: Long,
+        ready: CountDownLatch,
+        startGate: CountDownLatch
+    ): String {
+        val taskStart = SystemClock.elapsedRealtime()
+        var session: RootCoreSession? = null
+        var signalledReady = false
+        var result = "не завершена"
+
+        fun markReady() {
+            if (!signalledReady) {
+                signalledReady = true
+                ready.countDown()
+            }
+        }
+
+        try {
+            taskLog(taskId, "TASK_QUEUED uuid=$routineId")
+
+            val openStart = SystemClock.elapsedRealtime()
+            taskLog(taskId, "ROOT_OPEN_START")
+            session = RootCore.open(applicationContext, 30_000L)
+            taskLog(
+                taskId,
+                "ROOT_OPEN_OK elapsed=${SystemClock.elapsedRealtime() - openStart}ms " +
+                    "rootAlive=${session.isRootProcessAlive()}"
+            )
+
+            val pingStart = SystemClock.elapsedRealtime()
+            val uid = session.ping()
+            check(uid == 0) { "Ожидался root UID=0, получен $uid" }
+            taskLog(
+                taskId,
+                "PING_OK uid=$uid elapsed=" +
+                    "${SystemClock.elapsedRealtime() - pingStart}ms"
+            )
+
+            val queryStart = SystemClock.elapsedRealtime()
+            val routine = repository.load(session).firstOrNull {
+                it.uuid == routineId
+            } ?: error("UUID=$routineId не найден в Samsung Provider")
+
+            taskLog(
+                taskId,
+                "INITIAL_STATE uuid=$routineId name=${routine.name} " +
+                    "enabled=${routine.isEnabled} running=${routine.isRunning} " +
+                    "providerElapsed=${SystemClock.elapsedRealtime() - queryStart}ms"
+            )
+
+            check(routine.isEnabled == true) {
+                "Сценарий отключён или Provider не сообщил is_enabled"
+            }
+            val before = routine.isRunning
+                ?: error("Provider не сообщил исходное is_running")
+
+            taskLog(taskId, "READY initialRunning=$before")
+            markReady()
+
+            check(startGate.await(40, TimeUnit.SECONDS)) {
+                "Тайм-аут ожидания общего старта"
+            }
+
+            taskLog(taskId, "LAUNCH_START")
+            val launchStart = SystemClock.elapsedRealtime()
+
+            val extras = Bundle().apply {
+                putLong("EXTRA_KEY_ROUTINE_UUID", routineId)
+            }
+
+            session.launchActivity(
+                android.content.ComponentName(
+                    "com.samsung.android.app.routines",
+                    "com.samsung.android.app.routines.ui.shortcut.ShortcutLaunchActivity"
+                ),
+                null,
+                extras,
+                0x10008000
+            )
+
+            taskLog(
+                taskId,
+                "LAUNCH_RETURN elapsed=${SystemClock.elapsedRealtime() - launchStart}ms"
+            )
+
+            val pollStart = SystemClock.elapsedRealtime()
+            val deadline = pollStart + 5_000L
+            var poll = 0
+            var after: Boolean? = before
+
+            while (SystemClock.elapsedRealtime() < deadline) {
+                poll++
+                val queryAt = SystemClock.elapsedRealtime()
+                val updated = repository.load(session).firstOrNull {
+                    it.uuid == routineId
+                }
+                after = updated?.isRunning
+
+                taskLog(
+                    taskId,
+                    "PROVIDER_POLL n=$poll running=$after " +
+                        "queryElapsed=${SystemClock.elapsedRealtime() - queryAt}ms " +
+                        "sinceLaunch=${SystemClock.elapsedRealtime() - launchStart}ms"
+                )
+
+                if (after != null && after != before) break
+                SystemClock.sleep(250L)
+            }
+
+            result = if (after != null && after != before) {
+                "STATE_CHANGED $before->$after"
+            } else {
+                "STATE_NOT_CONFIRMED initial=$before actual=$after"
+            }
+
+            taskLog(
+                taskId,
+                "TASK_RESULT $result total=${SystemClock.elapsedRealtime() - taskStart}ms"
+            )
+        } catch (error: Throwable) {
+            result = "ERROR ${error.javaClass.simpleName}: ${error.message}"
+            taskLog(taskId, result)
+        } finally {
+            markReady()
+
+            val current = session
+            if (current != null) {
+                try {
+                    taskLog(taskId, "ROOT_CLOSE_START")
+                    val closeStart = SystemClock.elapsedRealtime()
+                    current.close()
+                    val stopped = current.awaitTermination(5_000L)
+                    taskLog(
+                        taskId,
+                        "ROOT_CLOSE_RESULT stopped=$stopped " +
+                            "alive=${current.isRootProcessAlive()} " +
+                            "elapsed=${SystemClock.elapsedRealtime() - closeStart}ms"
+                    )
+                } catch (error: Throwable) {
+                    taskLog(
+                        taskId,
+                        "ROOT_CLOSE_ERROR ${error.javaClass.simpleName}: ${error.message}"
+                    )
+                }
+            } else {
+                taskLog(taskId, "ROOT_CLOSE_SKIPPED noSession")
+            }
+
+            taskLog(
+                taskId,
+                "TASK_FINISH total=${SystemClock.elapsedRealtime() - taskStart}ms"
+            )
+        }
+
+        return result
+    }
+
+    private fun taskLog(taskId: String, message: String) {
+        appendLog("$taskId ${SystemClock.elapsedRealtime()}ms $message")
+    }
+
+    private fun appendLog(message: String) {
+        val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+            .format(Date())
+
+        runOnUiThread {
+            if (::output.isInitialized) {
+                output.append("\n[$time] $message")
+            }
+        }
+    }
+
+    private fun editField(hintText: String) =
+        EditText(this).apply {
+            hint = hintText
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setTextColor(white)
+            setHintTextColor(secondary)
+        }
+
+    private fun addButton(
+        parent: LinearLayout,
+        label: String,
+        action: () -> Unit
+    ): Button {
+        val button = Button(this).apply {
+            text = label
+            isAllCaps = false
+            setTextColor(white)
+            setBackgroundColor(blue)
+            setOnClickListener { action() }
+        }
+        parent.addView(
+            button,
+            LinearLayout.LayoutParams(-1, dp(48)).apply {
+                topMargin = dp(7)
+                bottomMargin = dp(3)
+            }
+        )
+        return button
+    }
+
+    private fun text(value: String, size: Float, color: Int) =
+        TextView(this).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(7), 0, dp(7))
+        }
+
+    private fun dp(value: Int) =
+        (value * resources.displayMetrics.density).toInt()
+
+    override fun onDestroy() {
+        workers.shutdownNow()
+        super.onDestroy()
+    }
+}

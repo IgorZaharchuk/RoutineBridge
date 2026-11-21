@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".RootCoreDiagnosticsActivity"
+            android:exported="false"
+            android:label="Root Core diagnostics"
+            android:theme="@style/AppTheme" />
+            <activity
+            android:name=".RootCoreParallelDiagnosticsActivity"
+            android:exported="false"
+            android:label="Root Core parallel diagnostics"
+            android:theme="@style/AppTheme" />
+    </application>
+</manifest>

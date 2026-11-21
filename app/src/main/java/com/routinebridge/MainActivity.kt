@@ -180,6 +180,17 @@ class MainActivity : Activity() {
             matchWrap().apply { bottomMargin = dp(8) }
         )
         content.addView(button(getString(R.string.refresh_routines)) { refreshRoutines() }, matchWrap().apply { bottomMargin = dp(8) })
+        if (packageName.endsWith(".experimental")) {
+            content.addView(
+                button("Диагностика Root Core") {
+                    val diagnosticsClass = Class.forName(
+                        "com.routinebridge.RootCoreParallelDiagnosticsActivity"
+                    )
+                    startActivity(Intent(this, diagnosticsClass))
+                },
+                matchWrap().apply { bottomMargin = dp(8) }
+            )
+        }
 
         content.addView(text(getString(R.string.my_inputs), 19f, white, true)
             .also { it.setPadding(0, dp(8), 0, dp(10)) })
