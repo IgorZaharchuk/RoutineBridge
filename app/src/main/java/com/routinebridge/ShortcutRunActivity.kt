@@ -8,6 +8,10 @@ import java.util.UUID
 
 class ShortcutRunActivity : Activity() {
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLocale.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         executeInput(intent)
@@ -31,39 +35,25 @@ class ShortcutRunActivity : Activity() {
         val id = intent.getStringExtra(MainActivity.EXTRA_INPUT_ID)
         if (id == null) {
             Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=input_id_missing")
-            openMainActivityWithError(
-                if (getSharedPreferences("settings", MODE_PRIVATE).getBoolean("english", false))
-                    "Shortcut input ID is missing."
-                else
-                    "В ярлыке отсутствует идентификатор входа."
-            )
+            openMainActivityWithError(getString(R.string.shortcut_id_missing))
             return
         }
-
-        val english = getSharedPreferences("settings", MODE_PRIVATE)
-            .getBoolean("english", false)
 
         val input = try {
             RoutineInputStore(this).load().firstOrNull { it.id == id }
         } catch (e: Exception) {
             Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=settings_load_failed", e)
-            val message = if (english) {
-                "Could not load input settings. Open RoutineBridge to check them."
-            } else {
-                "Не удалось загрузить настройки входов. Проверь их в RoutineBridge."
-            }
-            openMainActivityWithError(message)
+            openMainActivityWithError(
+                getString(R.string.shortcut_settings_load_failed)
+            )
             return
         }
 
         if (input == null) {
             Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR reason=input_not_found id=$id")
-            val message = if (english) {
-                "This input no longer exists. Open RoutineBridge to refresh shortcuts."
-            } else {
-                "Этот вход больше не существует. Открой RoutineBridge и обнови ярлыки."
-            }
-            openMainActivityWithError(message)
+            openMainActivityWithError(
+                getString(R.string.shortcut_input_missing)
+            )
             return
         }
 
@@ -73,16 +63,15 @@ class ShortcutRunActivity : Activity() {
             var errorMessage: String? = null
             try {
                 val result = RoutineActionExecutor(
-                    context = applicationContext,
-                    english = english
+                    context = applicationContext
                 ).execute(input, requestId)
                 Log.i(LOG_TAG, "SHORTCUT_RUN_FINISHED request=$requestId result=$result")
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "SHORTCUT_RUN_FAILED request=$requestId error=${e.message}", e)
                 errorMessage = if (e is RootCoreAccessException) {
-                    if (english) "Root access unavailable." else "Root-доступ недоступен."
+                    getString(R.string.root_access_unavailable)
                 } else {
-                    e.message ?: if (english) "Action failed." else "Не удалось выполнить действие."
+                    e.message ?: getString(R.string.action_failed)
                 }
             }
 

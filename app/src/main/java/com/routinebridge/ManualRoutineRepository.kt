@@ -8,6 +8,7 @@ import com.routinebridge.rootcore.RootCoreSession
 class ManualRoutineRepository(
     private val context: Context
 ) {
+    private val messages = AppLocale.wrap(context)
     private val providerUri = Uri.parse(
         "content://com.samsung.android.app.routines.externalprovider/" +
             "routine_list?routine_type=normal&condition_type=manual"
@@ -27,13 +28,13 @@ class ManualRoutineRepository(
 
         val columns = result.getStringArray("columns")
             ?: throw IllegalStateException(
-                "Samsung Provider не вернул список столбцов"
+                messages.getString(R.string.provider_missing_columns)
             )
 
         @Suppress("DEPRECATION")
         val rows = result.getParcelableArrayList<Bundle>("rows")
             ?: throw IllegalStateException(
-                "Samsung Provider не вернул строки"
+                messages.getString(R.string.provider_missing_rows)
             )
 
         val uuidIndex = columns.indexOf("uuid")
@@ -42,24 +43,24 @@ class ManualRoutineRepository(
         val enabledIndex = columns.indexOf("is_enabled")
 
         check(uuidIndex >= 0) {
-            "В Samsung Provider отсутствует столбец uuid"
+            messages.getString(R.string.provider_missing_uuid_column)
         }
         check(nameIndex >= 0) {
-            "В Samsung Provider отсутствует столбец name"
+            messages.getString(R.string.provider_missing_name_column)
         }
 
         return rows.mapIndexed { index, row ->
             val uuid = row.getString("c$uuidIndex")
                 ?.toLongOrNull()
                 ?: throw IllegalStateException(
-                    "Samsung Provider: некорректный UUID в строке ${index + 1}"
+                    messages.getString(R.string.provider_invalid_uuid, index + 1)
                 )
 
             val name = row.getString("c$nameIndex")
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }
                 ?: throw IllegalStateException(
-                    "Samsung Provider: пустое имя в строке ${index + 1}"
+                    messages.getString(R.string.provider_empty_name, index + 1)
                 )
 
             ManualRoutine(

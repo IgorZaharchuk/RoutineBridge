@@ -12,8 +12,9 @@ class RoutineActionExecutor(
     private val context: Context,
     private val repository: ManualRoutineRepository =
         ManualRoutineRepository(context),
-    private val english: Boolean = false
 ) {
+    private val localizedContext = AppLocale.wrap(context)
+
     fun execute(input: RoutineInput, requestId: String): String {
         val lock = routineLocks.computeIfAbsent(input.routineUuid.toString()) { Any() }
         return synchronized(lock) {
@@ -32,39 +33,35 @@ class RoutineActionExecutor(
 
         try {
             check(session.ping() == 0) {
-                "Root Core работает не с UID 0"
+                localizedContext.getString(R.string.root_core_invalid_uid)
             }
 
             val routine = repository.load(session).firstOrNull {
                 it.uuid == input.routineUuid
             } ?: throw IllegalStateException(
-                message(
-                    "Сценарий «${input.routineName}» не найден",
-                    "Routine “${input.routineName}” not found"
+                localizedContext.getString(
+                    R.string.routine_not_found,
+                    input.routineName
                 )
             )
 
             when (routine.isEnabled) {
                 false -> throw IllegalStateException(
-                    message(
-                        "Сценарий «${routine.name}» отключён в Samsung",
-                        "Routine “${routine.name}” is disabled in Samsung"
+                    localizedContext.getString(
+                        R.string.routine_disabled,
+                        routine.name
                     )
                 )
                 null -> throw IllegalStateException(
-                    message(
-                        "Не удалось определить, включён ли сценарий в Samsung",
-                        "Could not determine whether the routine is enabled in Samsung"
+                    localizedContext.getString(
+                        R.string.routine_enabled_state_unknown
                     )
                 )
                 true -> Unit
             }
 
             val current = routine.isRunning ?: throw IllegalStateException(
-                message(
-                    "Не удалось определить состояние сценария",
-                    "Could not determine routine state"
-                )
+                localizedContext.getString(R.string.routine_state_unknown)
             )
 
             val target = when (input.action) {
@@ -74,13 +71,14 @@ class RoutineActionExecutor(
             }
 
             if (current == target) {
-                return if (english) {
-                    "Routine “${routine.name}” is already " +
-                        if (target) "enabled" else "disabled"
-                } else {
-                    "Сценарий «${routine.name}» уже " +
-                        if (target) "включён" else "выключен"
-                }
+                return localizedContext.getString(
+                    R.string.routine_already_state,
+                    routine.name,
+                    localizedContext.getString(
+                        if (target) R.string.state_enabled
+                        else R.string.state_disabled
+                    )
+                )
             }
 
             val extras = Bundle().apply {
@@ -128,37 +126,38 @@ class RoutineActionExecutor(
 
             if (updated?.isRunning != target) {
                 val actual = updated?.isRunning?.let {
-                    if (it) {
-                        message("включён", "enabled")
-                    } else {
-                        message("выключен", "disabled")
-                    }
-                } ?: message("неизвестно", "unknown")
+                    localizedContext.getString(
+                        if (it) R.string.state_enabled
+                        else R.string.state_disabled
+                    )
+                } ?: localizedContext.getString(R.string.state_unknown)
+
+                val expected = localizedContext.getString(
+                    if (target) R.string.state_enabled
+                    else R.string.state_disabled
+                )
 
                 throw IllegalStateException(
-                    message(
-                        "Новое состояние сценария не подтверждено. " +
-                            "Ожидалось: ${if (target) "включён" else "выключен"}; " +
-                            "получено: $actual",
-                        "The new routine state was not confirmed. " +
-                            "Expected: ${if (target) "enabled" else "disabled"}; " +
-                            "actual: $actual"
+                    localizedContext.getString(
+                        R.string.routine_state_not_confirmed,
+                        expected,
+                        actual
                     )
                 )
             }
 
-            return if (english) {
-                "Routine “${routine.name}”: ${if (target) "enabled" else "disabled"}"
-            } else {
-                "Сценарий «${routine.name}»: ${if (target) "включён" else "выключен"}"
-            }
+            return localizedContext.getString(
+                R.string.routine_action_success,
+                routine.name,
+                localizedContext.getString(
+                    if (target) R.string.state_enabled
+                    else R.string.state_disabled
+                )
+            )
         } finally {
             RootCoreAccess.close(session)
         }
     }
-
-    private fun message(ru: String, en: String): String =
-        if (english) en else ru
 
     private companion object {
         const val LOG_TAG = "RoutineBridge"

@@ -6,6 +6,7 @@ import org.json.JSONObject
 
 class RoutineInputStore(context: Context) {
     private val prefs = context.getSharedPreferences("routine_inputs", Context.MODE_PRIVATE)
+    private val messages = AppLocale.wrap(context)
 
     fun load(): List<RoutineInput> {
         val array = JSONArray(prefs.getString("items", "[]") ?: "[]")
@@ -14,17 +15,17 @@ class RoutineInputStore(context: Context) {
 
             for (i in 0 until array.length()) {
                 val item = array.optJSONObject(i)
-                    ?: throw IllegalStateException("Повреждена запись настроек: элемент $i не является объектом")
+                    ?: throw IllegalStateException(messages.getString(R.string.store_invalid_item, i))
 
                 val id = item.optString("id").takeIf { it.isNotBlank() }
-                    ?: throw IllegalStateException("Повреждена запись настроек: отсутствует ID")
+                    ?: throw IllegalStateException(messages.getString(R.string.store_missing_id))
                 val label = item.optString("label").takeIf { it.isNotBlank() }
-                    ?: throw IllegalStateException("Повреждена запись настроек: отсутствует название входа")
+                    ?: throw IllegalStateException(messages.getString(R.string.store_missing_input_name))
                 val routineName = item.optString("routineName").takeIf { it.isNotBlank() }
-                    ?: throw IllegalStateException("Повреждена запись настроек: отсутствует название сценария")
+                    ?: throw IllegalStateException(messages.getString(R.string.store_missing_routine_name))
 
                 if (!ids.add(id)) {
-                    throw IllegalStateException("Повреждены настройки: повторяется ID входа $id")
+                    throw IllegalStateException(messages.getString(R.string.store_duplicate_id, id))
                 }
 
                 val uuidValue = item.opt("routineUuid")
@@ -32,16 +33,16 @@ class RoutineInputStore(context: Context) {
                     when (uuidValue) {
                         is Int -> uuidValue.toLong()
                         is Long -> uuidValue
-                        else -> throw IllegalArgumentException("UUID должен быть целым числом")
+                        else -> throw IllegalArgumentException(messages.getString(R.string.store_uuid_not_integer))
                     }
                 } catch (e: Exception) {
-                    throw IllegalStateException("Повреждена запись настроек: неверный UUID", e)
+                    throw IllegalStateException(messages.getString(R.string.store_invalid_uuid), e)
                 }
 
                 val action = try {
                     RoutineInputAction.valueOf(item.getString("action"))
                 } catch (e: Exception) {
-                    throw IllegalStateException("Повреждена запись настроек: неверное действие", e)
+                    throw IllegalStateException(messages.getString(R.string.store_invalid_action), e)
                 }
 
                 add(RoutineInput(id, label, uuid, routineName, action))
@@ -60,7 +61,7 @@ class RoutineInputStore(context: Context) {
                 .put("action", it.action.name))
         }
         check(prefs.edit().putString("items", array.toString()).commit()) {
-            "Не удалось сохранить настройки входов"
+            messages.getString(R.string.store_save_failed)
         }
     }
 }
