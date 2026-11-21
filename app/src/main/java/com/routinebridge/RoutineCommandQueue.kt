@@ -21,11 +21,18 @@ internal class RoutineCommandQueue {
 
     private data class InFlight(
         val routineUuid: Long,
-        val baselineState: Boolean,
-        var transform: BooleanStateTransform
+        var baselineState: Boolean,
+        var attemptTransform: BooleanStateTransform,
+        var followUpTransform: BooleanStateTransform = BooleanStateTransform.IDENTITY
     ) {
-        fun snapshot() = RoutineCommandSnapshot(routineUuid, transform)
-        fun desiredState() = transform.applyTo(baselineState)
+        fun snapshot() = RoutineCommandSnapshot(
+            routineUuid,
+            attemptTransform.then(followUpTransform)
+        )
+
+        fun attemptTargetState() = attemptTransform.applyTo(baselineState)
+
+        fun desiredState() = followUpTransform.applyTo(attemptTargetState())
     }
 
     private val pending = LinkedHashMap<Long, Pending>()
@@ -38,18 +45,40 @@ internal class RoutineCommandQueue {
 
         val active = inFlight
         if (active?.routineUuid == routineUuid) {
-            active.transform = active.transform.then(transform)
+            active.followUpTransform =
+                active.followUpTransform.then(transform)
             return
         }
 
+        enqueuePending(routineUuid, transform)
+    }
+
+    private fun enqueuePending(
+        routineUuid: Long,
+        transform: BooleanStateTransform,
+        atFront: Boolean = false
+    ) {
         val combined = (pending[routineUuid]?.transform
             ?: BooleanStateTransform.IDENTITY).then(transform)
 
         if (combined == BooleanStateTransform.IDENTITY) {
             pending.remove(routineUuid)
-        } else {
-            pending[routineUuid] = Pending(combined, ++nextRevision)
+            return
         }
+
+        val entry = Pending(combined, ++nextRevision)
+        if (!atFront || pending.isEmpty()) {
+            pending[routineUuid] = entry
+            return
+        }
+
+        val reordered = LinkedHashMap<Long, Pending>()
+        reordered[routineUuid] = entry
+        pending.forEach { (uuid, value) ->
+            if (uuid != routineUuid) reordered[uuid] = value
+        }
+        pending.clear()
+        pending.putAll(reordered)
     }
 
     @Synchronized
@@ -78,7 +107,11 @@ internal class RoutineCommandQueue {
         if (pending.keys.firstOrNull() != routineUuid) return null
 
         val entry = pending.remove(routineUuid) ?: return null
-        val active = InFlight(routineUuid, baselineState, entry.transform)
+        val active = InFlight(
+            routineUuid = routineUuid,
+            baselineState = baselineState,
+            attemptTransform = entry.transform
+        )
         inFlight = active
         return active.snapshot()
     }
@@ -87,20 +120,56 @@ internal class RoutineCommandQueue {
     fun inFlightSnapshot(): RoutineCommandSnapshot? = inFlight?.snapshot()
 
     @Synchronized
-    fun inFlightDesiredState(): Boolean? = inFlight?.desiredState()
+    fun inFlightAttemptTargetState(): Boolean? =
+        inFlight?.attemptTargetState()
 
     @Synchronized
-    fun completeIfSatisfied(actualState: Boolean): Boolean {
+    fun inFlightDesiredState(): Boolean? = inFlight?.desiredState()
+
+    /**
+     * Completes the physical attempt successfully.
+     * Any follow-up is evaluated against the confirmed Provider state.
+     * Returns true when the whole logical command is now satisfied.
+     */
+    @Synchronized
+    fun advanceAfterSuccess(actualState: Boolean): Boolean {
         val active = inFlight ?: return false
-        if (actualState != active.desiredState()) return false
-        inFlight = null
-        return true
+        val desired = active.desiredState()
+
+        if (actualState == desired) {
+            inFlight = null
+            return true
+        }
+
+        // The previous physical attempt is complete. Turn the remaining
+        // desired state into a new attempt based on the actual Provider state.
+        active.baselineState = actualState
+        active.attemptTransform = if (desired) {
+            BooleanStateTransform.ENABLE
+        } else {
+            BooleanStateTransform.DISABLE
+        }
+        active.followUpTransform = BooleanStateTransform.IDENTITY
+        return false
     }
 
+    /**
+     * Terminates the current physical attempt without retrying it.
+     * Commands received during that attempt survive as a new pending entry.
+     */
     @Synchronized
     fun releaseInFlight(): RoutineCommandSnapshot? {
         val active = inFlight ?: return null
         inFlight = null
+
+        if (active.followUpTransform != BooleanStateTransform.IDENTITY) {
+            enqueuePending(
+                active.routineUuid,
+                active.followUpTransform,
+                atFront = true
+            )
+        }
+
         return active.snapshot()
     }
 

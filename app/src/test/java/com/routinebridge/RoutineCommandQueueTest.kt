@@ -134,6 +134,7 @@ class RoutineCommandQueueTest {
             BooleanStateTransform.IDENTITY,
             queue.inFlightSnapshot()?.transform
         )
+        assertEquals(true, queue.inFlightAttemptTargetState())
         assertEquals(false, queue.inFlightDesiredState())
     }
 
@@ -145,11 +146,12 @@ class RoutineCommandQueueTest {
 
         queue.enqueue(10L, BooleanStateTransform.TOGGLE)
 
-        assertFalse(queue.completeIfSatisfied(true))
+        assertFalse(queue.advanceAfterSuccess(true))
         assertTrue(queue.hasInFlight())
+        assertEquals(false, queue.inFlightAttemptTargetState())
         assertEquals(false, queue.inFlightDesiredState())
 
-        assertTrue(queue.completeIfSatisfied(false))
+        assertTrue(queue.advanceAfterSuccess(false))
         assertFalse(queue.hasInFlight())
     }
 
@@ -161,8 +163,11 @@ class RoutineCommandQueueTest {
 
         queue.enqueue(10L, BooleanStateTransform.TOGGLE)
 
+        assertEquals(true, queue.inFlightAttemptTargetState())
         assertEquals(false, queue.inFlightDesiredState())
-        assertTrue(queue.completeIfSatisfied(false))
+        assertFalse(queue.advanceAfterSuccess(true))
+        assertEquals(false, queue.inFlightAttemptTargetState())
+        assertTrue(queue.advanceAfterSuccess(false))
     }
 
     @Test
@@ -201,7 +206,73 @@ class RoutineCommandQueueTest {
         assertEquals(20L, queue.nextPendingUuid())
     }
 
+
     @Test
+    fun `release does not retry failed attempt and preserves follow-up`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.ENABLE)
+        start(queue, false)
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
+        queue.enqueue(20L, BooleanStateTransform.DISABLE)
+
+        queue.releaseInFlight()
+
+        assertFalse(queue.hasInFlight())
+        assertEquals(
+            listOf(
+                RoutineCommandSnapshot(10L, BooleanStateTransform.TOGGLE),
+                RoutineCommandSnapshot(20L, BooleanStateTransform.DISABLE)
+            ),
+            queue.pendingSnapshot()
+        )
+    }
+
+    @Test
+    fun `identity follow-up is removed when failed attempt is released`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.ENABLE)
+        start(queue, false)
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
+
+        queue.releaseInFlight()
+
+        assertTrue(queue.pendingSnapshot().isEmpty())
+        assertFalse(queue.hasInFlight())
+    }
+
+    @Test
+    fun `successful attempt advances follow-up from confirmed state`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.ENABLE)
+        start(queue, false)
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
+
+        assertEquals(true, queue.inFlightAttemptTargetState())
+        assertEquals(false, queue.inFlightDesiredState())
+
+        assertFalse(queue.advanceAfterSuccess(true))
+        assertEquals(false, queue.inFlightAttemptTargetState())
+
+        assertTrue(queue.advanceAfterSuccess(false))
+        assertFalse(queue.hasInFlight())
+    }
+
+    @Test
+    fun `failed attempt without follow-up is not requeued`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
+        start(queue, false)
+
+        queue.releaseInFlight()
+
+        assertTrue(queue.pendingSnapshot().isEmpty())
+        assertFalse(queue.hasInFlight())
+    }
+\n    @Test
     fun `releasing without active operation is harmless`() {
         val queue = RoutineCommandQueue()
 

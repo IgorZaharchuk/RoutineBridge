@@ -179,7 +179,9 @@ internal object SamsungRoutineDispatcher {
         var performedLaunch = false
 
         while (true) {
-            val target = queue.inFlightDesiredState() ?: return
+            // Execute only the frozen physical attempt. New events are
+            // accumulated separately as a follow-up transform.
+            val target = queue.inFlightAttemptTargetState() ?: return
 
             val result = executor.executeOnce(
                 routineUuid = uuid,
@@ -208,7 +210,7 @@ internal object SamsungRoutineDispatcher {
                     context.getString(R.string.routine_state_unknown)
                 )
 
-            if (queue.completeIfSatisfied(actual)) {
+            if (queue.advanceAfterSuccess(actual)) {
                 val finalStatus = if (performedLaunch) "SUCCESS" else "SKIPPED"
 
                 Log.i(
