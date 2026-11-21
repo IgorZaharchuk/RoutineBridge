@@ -78,7 +78,7 @@ class RoutineCommandQueueTest {
             queue.beginNext(10L, false)
         )
         assertNull(queue.beginNext(20L, true))
-        assertNull(queue.nextPendingUuid())
+        assertEquals(20L, queue.nextPendingUuid())
         assertEquals(
             listOf(
                 RoutineCommandSnapshot(20L, BooleanStateTransform.DISABLE)
