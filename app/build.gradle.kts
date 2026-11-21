@@ -84,4 +84,5 @@ tasks.configureEach {
 
 dependencies {
     implementation(project(":root-core"))
+    testImplementation("junit:junit:4.13.2")
 }

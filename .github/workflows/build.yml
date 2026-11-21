@@ -36,6 +36,9 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/routinebridge-release.jks"
           test -s "$RUNNER_TEMP/routinebridge-release.jks"
 
+      - name: Run experimental unit tests
+        run: gradle testExperimentalUnitTest
+
       - name: Build APK
         env:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/routinebridge-release.jks
