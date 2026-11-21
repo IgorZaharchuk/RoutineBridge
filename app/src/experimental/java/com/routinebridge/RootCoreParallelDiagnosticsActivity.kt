@@ -60,7 +60,7 @@ class RootCoreParallelDiagnosticsActivity : Activity() {
 
         orderButton = Button(this).apply {
             isAllCaps = false
-            updateOrderButtonText()
+            text = "Первым запускается: $firstLaunchLabel  ↔  изменить"
             setOnClickListener {
                 firstLaunchLabel = if (firstLaunchLabel == "T1") "T2" else "T1"
                 updateOrderButtonText()
