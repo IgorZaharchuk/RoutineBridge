@@ -47,7 +47,7 @@ class SamsungRoutineService : Service() {
         val input = try {
             val id = intent?.getStringExtra(EXTRA_INPUT_ID)
             val label = intent?.getStringExtra(EXTRA_LABEL)
-            val routineUuid = intent?.getLongExtra(EXTRA_ROUTINE_UUID, Long.MIN_VALUE)
+            val routineUuid = requireNotNull(intent).getLongExtra(EXTRA_ROUTINE_UUID, Long.MIN_VALUE)
             val routineName = intent?.getStringExtra(EXTRA_ROUTINE_NAME)
             val actionName = intent?.getStringExtra(EXTRA_ACTION)
             val requestId = intent?.getStringExtra(EXTRA_REQUEST_ID)
