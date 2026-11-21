@@ -34,7 +34,7 @@ class MainActivity : Activity() {
     }
 
     private val store by lazy { RoutineInputStore(this) }
-    private val repository by lazy { ManualRoutineRepository(AppLocale.wrap(applicationContext)) }
+    private val repository by lazy { ManualRoutineRepository(applicationContext) }
     private var inputs = emptyList<RoutineInput>()
     private var routines = emptyList<ManualRoutine>()
     private lateinit var status: TextView

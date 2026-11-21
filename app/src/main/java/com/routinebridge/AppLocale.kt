@@ -2,6 +2,7 @@ package com.routinebridge
 
 import android.content.Context
 import android.content.res.Configuration
+import android.os.LocaleList
 import java.util.Locale
 
 internal object AppLocale {
@@ -12,7 +13,7 @@ internal object AppLocale {
     fun wrap(context: Context): Context {
         val locale = if (isEnglish(context)) Locale.ENGLISH else Locale("ru")
         val configuration = Configuration(context.resources.configuration)
-        configuration.setLocale(locale)
+        configuration.setLocales(LocaleList(locale))
         return context.createConfigurationContext(configuration)
     }
 }
