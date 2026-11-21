@@ -41,9 +41,7 @@ class RoutineActionExecutor(
                 localizedContext.getString(R.string.root_core_invalid_uid)
             }
 
-            return synchronized(samsungOperationLock) {
-                executeSamsungLocked(input, requestId, session)
-            }
+            return executeSamsungLocked(input, requestId, session)
         } finally {
             RootCoreAccess.close(session)
         }
@@ -180,7 +178,5 @@ class RoutineActionExecutor(
         val inputLocks = ConcurrentHashMap<String, Any>()
         val routineLocks = ConcurrentHashMap<String, Any>()
 
-        // Samsung Provider and Routine UI must not be accessed concurrently.
-        val samsungOperationLock = Any()
     }
 }
