@@ -158,14 +158,22 @@ internal class RoutineCommandQueue {
      * Commands received during that attempt survive as a new pending entry.
      */
     @Synchronized
-    fun releaseInFlight(): RoutineCommandSnapshot? {
+    fun releaseInFlight(
+        preserveAttempt: Boolean = false
+    ): RoutineCommandSnapshot? {
         val active = inFlight ?: return null
         inFlight = null
 
-        if (active.followUpTransform != BooleanStateTransform.IDENTITY) {
+        val remaining = if (preserveAttempt) {
+            active.attemptTransform.then(active.followUpTransform)
+        } else {
+            active.followUpTransform
+        }
+
+        if (remaining != BooleanStateTransform.IDENTITY) {
             enqueuePending(
                 active.routineUuid,
-                active.followUpTransform,
+                remaining,
                 atFront = true
             )
         }

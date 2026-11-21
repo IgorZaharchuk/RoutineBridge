@@ -262,6 +262,54 @@ class RoutineCommandQueueTest {
     }
 
     @Test
+    fun `failed corrective attempt preserves its target for a later event`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.ENABLE)
+        start(queue, false)
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
+        assertFalse(queue.advanceAfterSuccess(true))
+        assertEquals(false, queue.inFlightAttemptTargetState())
+
+        queue.releaseInFlight(preserveAttempt = true)
+
+        assertFalse(queue.hasInFlight())
+        assertEquals(
+            listOf(
+                RoutineCommandSnapshot(10L, BooleanStateTransform.DISABLE)
+            ),
+            queue.pendingSnapshot()
+        )
+
+        // A new event composes with the deferred target, not with the
+        // already completed physical attempt.
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
+        assertEquals(
+            listOf(
+                RoutineCommandSnapshot(10L, BooleanStateTransform.ENABLE)
+            ),
+            queue.pendingSnapshot()
+        )
+    }
+
+    @Test
+    fun `failed initial attempt preserves only commands received during it`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.ENABLE)
+        start(queue, false)
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
+        queue.releaseInFlight()
+
+        assertEquals(
+            listOf(
+                RoutineCommandSnapshot(10L, BooleanStateTransform.TOGGLE)
+            ),
+            queue.pendingSnapshot()
+        )
+    }
+
+    @Test
     fun `failed attempt without follow-up is not requeued`() {
         val queue = RoutineCommandQueue()
         queue.enqueue(10L, BooleanStateTransform.TOGGLE)
@@ -272,7 +320,8 @@ class RoutineCommandQueueTest {
         assertTrue(queue.pendingSnapshot().isEmpty())
         assertFalse(queue.hasInFlight())
     }
-\n    @Test
+
+    @Test
     fun `releasing without active operation is harmless`() {
         val queue = RoutineCommandQueue()
 
