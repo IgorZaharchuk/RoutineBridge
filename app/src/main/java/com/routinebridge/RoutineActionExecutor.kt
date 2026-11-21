@@ -16,6 +16,7 @@ internal data class RoutineExecutionResult(
     val status: RoutineExecutionStatus,
     val routineUuid: Long,
     val routineName: String,
+    val initialState: Boolean,
     val targetState: Boolean,
     val actualState: Boolean?
 )
@@ -36,12 +37,13 @@ internal class RoutineActionExecutor(
      */
     fun executeOnce(
         routineUuid: Long,
-        targetState: Boolean,
-        requestId: String
+        transform: BooleanStateTransform,
+        requestId: String,
+        onStateRead: (Boolean) -> Unit
     ): RoutineExecutionResult {
         Log.i(
             LOG_TAG,
-            "EXEC_ONCE_START request=$requestId uuid=$routineUuid target=$targetState"
+            "EXEC_ONCE_START request=$requestId uuid=$routineUuid transform=$transform"
         )
 
         val session = RootCoreAccess.open(appContext)
@@ -78,6 +80,8 @@ internal class RoutineActionExecutor(
             val current = routine.isRunning ?: throw IllegalStateException(
                 localizedContext.getString(R.string.routine_state_unknown)
             )
+            onStateRead(current)
+            val targetState = transform.applyTo(current)
 
             if (current == targetState) {
                 Log.i(
@@ -88,6 +92,7 @@ internal class RoutineActionExecutor(
                     status = RoutineExecutionStatus.SKIPPED,
                     routineUuid = routineUuid,
                     routineName = routine.name,
+                    initialState = current,
                     targetState = targetState,
                     actualState = current
                 )
@@ -139,6 +144,7 @@ internal class RoutineActionExecutor(
                     status = RoutineExecutionStatus.SUCCESS,
                     routineUuid = routineUuid,
                     routineName = routine.name,
+                    initialState = current,
                     targetState = targetState,
                     actualState = actual
                 )
@@ -154,6 +160,7 @@ internal class RoutineActionExecutor(
                 status = RoutineExecutionStatus.TIMEOUT,
                 routineUuid = routineUuid,
                 routineName = routine.name,
+                initialState = current,
                 targetState = targetState,
                 actualState = actual
             )

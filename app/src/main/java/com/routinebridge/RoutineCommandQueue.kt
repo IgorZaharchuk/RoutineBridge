@@ -21,7 +21,7 @@ internal class RoutineCommandQueue {
 
     private data class InFlight(
         val routineUuid: Long,
-        var baselineState: Boolean,
+        var baselineState: Boolean?,
         var attemptTransform: BooleanStateTransform,
         var followUpTransform: BooleanStateTransform = BooleanStateTransform.IDENTITY
     ) {
@@ -30,9 +30,11 @@ internal class RoutineCommandQueue {
             attemptTransform.then(followUpTransform)
         )
 
-        fun attemptTargetState() = attemptTransform.applyTo(baselineState)
+        fun attemptTargetState(): Boolean? =
+            baselineState?.let(attemptTransform::applyTo)
 
-        fun desiredState() = followUpTransform.applyTo(attemptTargetState())
+        fun desiredState(): Boolean? =
+            attemptTargetState()?.let(followUpTransform::applyTo)
     }
 
     private val pending = LinkedHashMap<Long, Pending>()
@@ -101,7 +103,7 @@ internal class RoutineCommandQueue {
     @Synchronized
     fun beginNext(
         routineUuid: Long,
-        baselineState: Boolean
+        baselineState: Boolean? = null
     ): RoutineCommandSnapshot? {
         if (inFlight != null) return null
         if (pending.keys.firstOrNull() != routineUuid) return null
@@ -120,6 +122,17 @@ internal class RoutineCommandQueue {
     fun inFlightSnapshot(): RoutineCommandSnapshot? = inFlight?.snapshot()
 
     @Synchronized
+    fun inFlightAttemptTransform(): BooleanStateTransform? =
+        inFlight?.attemptTransform
+
+    @Synchronized
+    fun setInFlightBaseline(state: Boolean): Boolean? {
+        val active = inFlight ?: return null
+        active.baselineState = state
+        return active.attemptTargetState()
+    }
+
+    @Synchronized
     fun inFlightAttemptTargetState(): Boolean? =
         inFlight?.attemptTargetState()
 
@@ -132,9 +145,14 @@ internal class RoutineCommandQueue {
      * Returns true when the whole logical command is now satisfied.
      */
     @Synchronized
-    fun advanceAfterSuccess(actualState: Boolean): Boolean {
+    fun advanceAfterSuccess(
+        initialState: Boolean,
+        actualState: Boolean
+    ): Boolean {
         val active = inFlight ?: return false
-        val desired = active.desiredState()
+        val desired = active.followUpTransform.applyTo(
+            active.attemptTransform.applyTo(initialState)
+        )
 
         if (actualState == desired) {
             inFlight = null

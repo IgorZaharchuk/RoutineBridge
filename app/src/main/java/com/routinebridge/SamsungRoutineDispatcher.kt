@@ -126,57 +126,30 @@ internal object SamsungRoutineDispatcher {
             val repository = ManualRoutineRepository(context)
             val executor = RoutineActionExecutor(context, repository)
 
-            // Bind a Provider-read failure to the exact pending revision.
-            // Commands arriving during the read receive a newer revision.
-            val pendingToken = queue.pendingToken(uuid) ?: return false
-
-            val initial = try {
-                repository.load().firstOrNull { it.uuid == uuid }
-                    ?: throw IllegalStateException(
-                        context.getString(
-                            R.string.routine_not_found,
-                            uuid.toString()
-                        )
-                    )
-            } catch (error: Exception) {
-                val removed = queue.discardPending(pendingToken)
-                Log.w(
-                    TAG,
-                    "DISPATCH_PENDING_FAILED uuid=$uuid " +
-                        "removedRevision=${pendingToken.revision} removed=$removed"
-                )
-                throw error
-            }
-
-            val baseline = initial.isRunning
-                ?: run {
-                    val removed = queue.discardPending(pendingToken)
-                    Log.w(
-                        TAG,
-                        "DISPATCH_STATE_UNKNOWN uuid=$uuid " +
-                            "removedRevision=${pendingToken.revision} removed=$removed"
-                    )
-                    throw IllegalStateException(
-                        context.getString(R.string.routine_state_unknown)
-                    )
-                }
-
-            val started = queue.beginNext(uuid, baseline) ?: return false
+            // The executor reads the authoritative state inside the same
+            // RootCore session that performs the physical launch.
+            val started = queue.beginNext(uuid) ?: return false
 
             Log.i(
                 TAG,
                 "DISPATCH_START request=$requestId uuid=$uuid " +
-                    "baseline=$baseline transform=${started.transform}"
+                    "transform=${started.transform}"
             )
 
             while (true) {
-                // Execute only the frozen physical attempt.
-                val target = queue.inFlightAttemptTargetState() ?: return false
+                // Execute only the frozen physical transform. The executor
+                // supplies its Provider baseline before launching Samsung.
+                val transform = queue.inFlightAttemptTransform() ?: return false
 
                 val result = executor.executeOnce(
                     routineUuid = uuid,
-                    targetState = target,
-                    requestId = requestId
+                    transform = transform,
+                    requestId = requestId,
+                    onStateRead = { state ->
+                        check(queue.setInFlightBaseline(state) != null) {
+                            "In-flight command disappeared before launch"
+                        }
+                    }
                 )
 
                 when (result.status) {
@@ -193,7 +166,7 @@ internal object SamsungRoutineDispatcher {
                         Log.w(
                             TAG,
                             "DISPATCH_TIMEOUT request=$requestId uuid=$uuid " +
-                                "target=$target actual=${result.actualState} " +
+                                "target=${result.targetState} actual=${result.actualState} " +
                                 "deferred=$confirmedAttempt"
                         )
 
@@ -208,7 +181,7 @@ internal object SamsungRoutineDispatcher {
                         context.getString(R.string.routine_state_unknown)
                     )
 
-                if (queue.advanceAfterSuccess(actual)) {
+                if (queue.advanceAfterSuccess(result.initialState, actual)) {
                     val finalStatus =
                         if (performedLaunch) "SUCCESS" else "SKIPPED"
 

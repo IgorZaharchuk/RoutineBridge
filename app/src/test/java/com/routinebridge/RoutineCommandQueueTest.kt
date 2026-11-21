@@ -67,6 +67,31 @@ class RoutineCommandQueueTest {
     }
 
     @Test
+    fun `in-flight baseline can be supplied by the executor state read`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
+
+        assertNotNull(queue.beginNext(10L))
+        assertNull(queue.inFlightAttemptTargetState())
+        assertEquals(true, queue.setInFlightBaseline(false))
+        assertEquals(true, queue.inFlightAttemptTargetState())
+        assertEquals(true, queue.inFlightDesiredState())
+    }
+
+    @Test
+    fun `follow-up received before executor state read uses that actual baseline`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.ENABLE)
+        assertNotNull(queue.beginNext(10L))
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
+
+        assertEquals(true, queue.setInFlightBaseline(false))
+        assertEquals(true, queue.inFlightAttemptTargetState())
+        assertEquals(false, queue.inFlightDesiredState())
+    }
+
+    @Test
     fun `only selected pending UUID can become in flight`() {
         val queue = RoutineCommandQueue()
         queue.enqueue(10L, BooleanStateTransform.ENABLE)
@@ -146,12 +171,12 @@ class RoutineCommandQueueTest {
 
         queue.enqueue(10L, BooleanStateTransform.TOGGLE)
 
-        assertFalse(queue.advanceAfterSuccess(true))
+        assertFalse(queue.advanceAfterSuccess(false, true))
         assertTrue(queue.hasInFlight())
         assertEquals(false, queue.inFlightAttemptTargetState())
         assertEquals(false, queue.inFlightDesiredState())
 
-        assertTrue(queue.advanceAfterSuccess(false))
+        assertTrue(queue.advanceAfterSuccess(true, false))
         assertFalse(queue.hasInFlight())
     }
 
@@ -165,9 +190,9 @@ class RoutineCommandQueueTest {
 
         assertEquals(true, queue.inFlightAttemptTargetState())
         assertEquals(false, queue.inFlightDesiredState())
-        assertFalse(queue.advanceAfterSuccess(true))
+        assertFalse(queue.advanceAfterSuccess(false, true))
         assertEquals(false, queue.inFlightAttemptTargetState())
-        assertTrue(queue.advanceAfterSuccess(false))
+        assertTrue(queue.advanceAfterSuccess(true, false))
     }
 
     @Test
@@ -254,10 +279,10 @@ class RoutineCommandQueueTest {
         assertEquals(true, queue.inFlightAttemptTargetState())
         assertEquals(false, queue.inFlightDesiredState())
 
-        assertFalse(queue.advanceAfterSuccess(true))
+        assertFalse(queue.advanceAfterSuccess(false, true))
         assertEquals(false, queue.inFlightAttemptTargetState())
 
-        assertTrue(queue.advanceAfterSuccess(false))
+        assertTrue(queue.advanceAfterSuccess(true, false))
         assertFalse(queue.hasInFlight())
     }
 
@@ -268,7 +293,7 @@ class RoutineCommandQueueTest {
         start(queue, false)
 
         queue.enqueue(10L, BooleanStateTransform.TOGGLE)
-        assertFalse(queue.advanceAfterSuccess(true))
+        assertFalse(queue.advanceAfterSuccess(false, true))
         assertEquals(false, queue.inFlightAttemptTargetState())
 
         queue.releaseInFlight(preserveAttempt = true)
@@ -354,4 +379,16 @@ class RoutineCommandQueueTest {
         assertTrue(queue.discardPending(token))
         assertTrue(queue.pendingSnapshot().isEmpty())
     }
+
+    @Test
+    fun `successful toggle uses executor fresh initial state`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
+        start(queue, false)
+
+        // The executor reads true even though the dispatch baseline was false.
+        assertTrue(queue.advanceAfterSuccess(true, false))
+        assertFalse(queue.hasInFlight())
+    }
+
 }
