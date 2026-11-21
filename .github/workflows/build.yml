@@ -2,7 +2,9 @@ name: Android Build
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
+      - experiment/root-worker
   workflow_dispatch:
 
 permissions:
@@ -34,17 +36,31 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/routinebridge-release.jks"
           test -s "$RUNNER_TEMP/routinebridge-release.jks"
 
-      - name: Build signed Release APK
+      - name: Build APK
         env:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/routinebridge-release.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleRelease
+        run: |
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            gradle assembleRelease
+          else
+            gradle assembleExperimental
+          fi
 
-      - name: Upload APK
+      - name: Upload Release APK
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: RoutineBridge-release
           path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Upload Experimental APK
+        if: github.ref == 'refs/heads/experiment/root-worker'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoutineBridge-experimental
+          path: app/build/outputs/apk/experimental/app-experimental.apk
           if-no-files-found: error
