@@ -29,12 +29,9 @@ internal object SamsungRoutineDispatcher {
 
     private var workerScheduled = false
 
-    fun whenDrained(callback: () -> Unit) {
+    fun whenWorkerStopped(callback: () -> Unit) {
         val runNow = synchronized(schedulingLock) {
-            if (workerScheduled ||
-                queue.nextPendingUuid() != null ||
-                queue.hasInFlight()
-            ) {
+            if (workerScheduled || queue.hasInFlight()) {
                 drainCallbacks.add(callback)
                 false
             } else {
@@ -44,10 +41,8 @@ internal object SamsungRoutineDispatcher {
         if (runNow) callback()
     }
 
-    fun isIdle(): Boolean = synchronized(schedulingLock) {
-        !workerScheduled &&
-            queue.nextPendingUuid() == null &&
-            !queue.hasInFlight()
+    fun isWorkerStopped(): Boolean = synchronized(schedulingLock) {
+        !workerScheduled && !queue.hasInFlight()
     }
 
     fun enqueue(
@@ -96,26 +91,17 @@ internal object SamsungRoutineDispatcher {
             val uuid = queue.nextPendingUuid()
 
             if (uuid == null) {
-                val callbacks: List<() -> Unit>? =
-                    synchronized(schedulingLock) {
-                        if (queue.nextPendingUuid() == null) {
-                            workerScheduled = false
-                            drainCallbacks.toList().also {
-                                drainCallbacks.clear()
-                            }
-                        } else {
-                            null
-                        }
+                val queueEmpty = synchronized(schedulingLock) {
+                    if (queue.nextPendingUuid() == null) {
+                        workerScheduled = false
+                        true
+                    } else {
+                        false
                     }
+                }
 
-                if (callbacks != null) {
-                    callbacks.forEach { callback ->
-                        try {
-                            callback()
-                        } catch (error: Exception) {
-                            Log.e(TAG, "DISPATCH_CALLBACK_FAILED", error)
-                        }
-                    }
+                if (queueEmpty) {
+                    notifyWorkerStopped()
                     return
                 }
                 continue
@@ -124,7 +110,28 @@ internal object SamsungRoutineDispatcher {
             // A true result means a confirmed operation required correction,
             // but that correction failed. Keep its target pending and wait
             // for a genuinely new event before resuming the queue.
-            if (processRoutine(uuid)) return
+            if (processRoutine(uuid)) {
+                notifyWorkerStopped()
+                return
+            }
+        }
+    }
+
+    private fun notifyWorkerStopped() {
+        val callbacks = synchronized(schedulingLock) {
+            if (workerScheduled || queue.hasInFlight()) {
+                null
+            } else {
+                drainCallbacks.toList().also { drainCallbacks.clear() }
+            }
+        } ?: return
+
+        callbacks.forEach { callback ->
+            try {
+                callback()
+            } catch (error: Exception) {
+                Log.e(TAG, "DISPATCH_CALLBACK_FAILED", error)
+            }
         }
     }
 

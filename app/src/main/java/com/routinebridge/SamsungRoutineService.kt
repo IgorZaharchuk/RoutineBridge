@@ -103,7 +103,7 @@ class SamsungRoutineService : Service() {
     }
 
     private fun waitForQueueAndStop(startId: Int) {
-        SamsungRoutineDispatcher.whenDrained {
+        SamsungRoutineDispatcher.whenWorkerStopped {
             mainHandler.post {
                 stopWhenDrained(startId)
             }
@@ -111,7 +111,7 @@ class SamsungRoutineService : Service() {
     }
 
     private fun stopWhenDrained(startId: Int) {
-        if (!SamsungRoutineDispatcher.isIdle()) return
+        if (!SamsungRoutineDispatcher.isWorkerStopped()) return
 
         if (stopSelfResult(startId)) {
             stopForeground(STOP_FOREGROUND_REMOVE)
