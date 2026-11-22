@@ -236,102 +236,23 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun createInlineEditor(input: RoutineInput): View {
-        val form = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(14), 0, dp(4))
-        }
-
-        form.addView(text(getString(R.string.input_name), 13f, secondary))
-        val name = EditText(this).apply {
-            setSingleLine(true)
-            setText(input.label)
-            setTextColor(white)
-            setHintTextColor(secondary)
-        }
-        form.addView(name, matchWrap())
-
-        val options = routines.toMutableList()
-        if (options.none { it.uuid == input.routineUuid }) {
-            options.add(0, ManualRoutine(input.routineUuid, input.routineName, null, null))
-        }
-
-        form.addView(
-            text(getString(R.string.manual_routine), 13f, secondary)
-                .also { it.setPadding(0, dp(10), 0, 0) }
-        )
-        val routineSpinner = Spinner(this)
-        routineSpinner.adapter = themedSpinnerAdapter(options.map { routine ->
-            if (routine.uuid == input.routineUuid &&
-                routines.none { it.uuid == input.routineUuid }
-            ) {
-                "${routine.name}${getString(R.string.routine_not_found_suffix)}"
-            } else {
-                routine.name
+    private fun createInlineEditor(input: RoutineInput): View =
+        RoutineInputEditor.create(
+            activity = this,
+            input = input,
+            routines = routines,
+            actionTitle = ::actionTitle,
+            onSave = { updatedInput ->
+                persist(inputs.map {
+                    if (it.id == input.id) updatedInput else it
+                })
+            },
+            onDelete = { confirmDelete(input) },
+            onCancel = {
+                editingInputId = null
+                renderInputs()
             }
-        })
-        prepareSpinner(routineSpinner)
-        routineSpinner.setSelection(
-            options.indexOfFirst { it.uuid == input.routineUuid }.coerceAtLeast(0)
         )
-        form.addView(routineSpinner, matchWrap())
-
-        form.addView(
-            text(getString(R.string.action), 13f, secondary)
-                .also { it.setPadding(0, dp(10), 0, 0) }
-        )
-        val actionValues = RoutineInputAction.entries
-        val actionSpinner = Spinner(this)
-        actionSpinner.adapter = themedSpinnerAdapter(actionValues.map { actionTitle(it) })
-        prepareSpinner(actionSpinner)
-        actionSpinner.setSelection(actionValues.indexOf(input.action).coerceAtLeast(0))
-        form.addView(actionSpinner, matchWrap())
-
-        val buttons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-        }
-
-        buttons.addView(dialogButton(getString(R.string.delete)) {
-            confirmDelete(input)
-        }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-            leftMargin = dp(4)
-            rightMargin = dp(4)
-        })
-
-        buttons.addView(dialogButton(getString(R.string.cancel)) {
-            editingInputId = null
-            renderInputs()
-        }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-            leftMargin = dp(4)
-            rightMargin = dp(4)
-        })
-
-        buttons.addView(dialogButton(getString(R.string.save)) {
-            val label = name.text.toString().trim()
-            if (label.isEmpty()) {
-                name.error = getString(R.string.enter_name)
-                return@dialogButton
-            }
-
-            val routine = options[routineSpinner.selectedItemPosition]
-            val updatedInput = input.copy(
-                label = label,
-                routineUuid = routine.uuid,
-                routineName = routine.name,
-                action = actionValues[actionSpinner.selectedItemPosition]
-            )
-            persist(inputs.map {
-                if (it.id == input.id) updatedInput else it
-            })
-        }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-            leftMargin = dp(4)
-            rightMargin = dp(4)
-        })
-
-        form.addView(buttons, matchWrap())
-        return form
-    }
 
     private fun shortcutLimitError(items: List<RoutineInput>): String? {
         val limit = getSystemService(android.content.pm.ShortcutManager::class.java)

@@ -32,10 +32,12 @@ class RootCoreDiagnosticsActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private var session: RootCoreSession? = null
     private lateinit var output: TextView
+    private lateinit var journal: TextView
     private lateinit var routineSelection: LinearLayout
     private lateinit var inputContainer: LinearLayout
     private var availableRoutines: List<ManualRoutine> = emptyList()
     private var diagnosticInputs: List<RoutineInput> = emptyList()
+    private var editingDiagnosticInputId: String? = null
     private val selectedRoutineUuids = linkedSetOf<Long>()
     private val collapsedDiagnosticGroups = mutableSetOf<Long>()
 
@@ -202,14 +204,22 @@ class RootCoreDiagnosticsActivity : Activity() {
             setTextIsSelectable(true)
         }
 
+        content.addView(output)
+
         addButton(content, "Скопировать тесты и журнал RoutineBridge") {
             val testReport = output.text.toString()
             worker.execute {
-                val journal = captureRoutineBridgeLogcat()
-                val combined = testReport + "\\n\\n===== LOGCAT: RoutineBridge =====\\n" + journal
+                val journalText = captureRoutineBridgeLogcat()
+                val combined = testReport +
+                    "\\n\\n===== LOGCAT: RoutineBridge =====\\n" +
+                    journalText
+
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
-                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                    journal.text = journalText
+
+                    val clipboard =
+                        getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(
                         ClipData.newPlainText("RoutineBridge diagnostics", combined)
                     )
@@ -222,13 +232,38 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        content.addView(output)
+        content.addView(text("Журнал RoutineBridge", 16f, primary))
+        journal = text("Журнал ещё не загружен.", 12f, secondary).apply {
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setBackgroundColor(Color.rgb(30, 30, 30))
+            setTextIsSelectable(true)
+        }
+        content.addView(journal)
 
         val scroll = ScrollView(this)
         scroll.addView(content)
         setContentView(scroll)
         loadRoutines()
         loadDiagnosticInputs()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::journal.isInitialized) {
+            refreshJournal()
+        }
+    }
+
+    private fun refreshJournal() {
+        worker.execute {
+            val captured = captureRoutineBridgeLogcat()
+            runOnUiThread {
+                if (isFinishing || isDestroyed || !::journal.isInitialized) {
+                    return@runOnUiThread
+                }
+                journal.text = captured
+            }
+        }
     }
 
     private fun loadRoutines() {
@@ -360,9 +395,99 @@ class RootCoreDiagnosticsActivity : Activity() {
                 }
             },
             onInputClick = { input -> confirmDiagnosticInput(input) },
-            onEditClick = {},
-            expandedContent = { null }
+            onEditClick = { input ->
+                editingDiagnosticInputId =
+                    if (editingDiagnosticInputId == input.id) null else input.id
+                renderDiagnosticInputs()
+            },
+            expandedContent = { input ->
+                if (editingDiagnosticInputId == input.id) {
+                    RoutineInputEditor.create(
+                        activity = this,
+                        input = input,
+                        routines = availableRoutines,
+                        actionTitle = { action ->
+                            when (action) {
+                                RoutineInputAction.ENABLE ->
+                                    getString(R.string.action_enable)
+                                RoutineInputAction.DISABLE ->
+                                    getString(R.string.action_disable)
+                                RoutineInputAction.TOGGLE ->
+                                    getString(R.string.action_toggle)
+                            }
+                        },
+                        onSave = { updated ->
+                            saveDiagnosticInput(updated)
+                        },
+                        onDelete = {
+                            AlertDialog.Builder(this)
+                                .setTitle(getString(R.string.delete_input_title))
+                                .setMessage(getString(R.string.delete_input_message))
+                                .setNegativeButton(getString(R.string.cancel), null)
+                                .setPositiveButton(getString(R.string.delete)) { _, _ ->
+                                    saveDiagnosticInputs(
+                                        diagnosticInputs.filterNot { it.id == input.id }
+                                    )
+                                }
+                                .show()
+                        },
+                        onCancel = {
+                            editingDiagnosticInputId = null
+                            renderDiagnosticInputs()
+                        }
+                    )
+                } else null
+            }
         )
+    }
+
+    private fun saveDiagnosticInput(updated: RoutineInput) {
+        saveDiagnosticInputs(
+            diagnosticInputs.map {
+                if (it.id == updated.id) updated else it
+            }
+        )
+    }
+
+    private fun saveDiagnosticInputs(updated: List<RoutineInput>) {
+        try {
+            RoutineInputStore(this).save(updated)
+            val previous = diagnosticInputs
+            diagnosticInputs = updated
+            editingDiagnosticInputId = null
+            renderDiagnosticInputs()
+
+            val removedIds = previous
+                .filter { old -> updated.none { it.id == old.id } }
+                .map { it.id }
+
+            val shortcutsUpdated = RoutineShortcutPublisher(this).publishAll(
+                updated,
+                removedIds,
+                getString(R.string.shortcut_deleted)
+            )
+
+            if (shortcutsUpdated) {
+                log("RoutineBridge: входы сохранены, ярлыки обновлены (${updated.size})")
+            } else {
+                log("RoutineBridge: входы сохранены, но Android не подтвердил обновление ярлыков")
+                AlertDialog.Builder(this)
+                    .setTitle("Вход сохранён")
+                    .setMessage("Настройки записаны, но Android не подтвердил обновление ярлыков.")
+                    .setPositiveButton(getString(R.string.close), null)
+                    .show()
+            }
+        } catch (error: Throwable) {
+            log(
+                "RoutineBridge: ошибка сохранения или публикации ярлыков: " +
+                    "${error.javaClass.simpleName}: ${error.message}"
+            )
+            AlertDialog.Builder(this)
+                .setTitle("Ошибка операции")
+                .setMessage(error.message ?: error.javaClass.simpleName)
+                .setPositiveButton(getString(R.string.close), null)
+                .show()
+        }
     }
 
     private fun confirmDiagnosticInput(input: RoutineInput) {
@@ -555,7 +680,7 @@ class RootCoreDiagnosticsActivity : Activity() {
         return try {
             val process = ProcessBuilder(
                 "logcat", "-d", "-t", "1500", "-v", "time",
-                "-s", "RoutineBridge:I", "RoutineBridge:W", "RoutineBridge:E"
+                "-s", "RoutineBridge:I"
             ).redirectErrorStream(true).start()
 
             val captured = process.inputStream.bufferedReader().use { it.readText() }
