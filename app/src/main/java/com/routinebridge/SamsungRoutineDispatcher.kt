@@ -8,40 +8,33 @@ import android.widget.Toast
 import java.util.concurrent.Executors
 
 /**
- * Process-wide serialized dispatcher for all production Samsung launches.
+ * Android shell for the process-wide serialized Samsung worker.
+ *
+ * Queueing and worker lifecycle are owned by RoutineWorkerCoordinator.
  */
 internal object SamsungRoutineDispatcher {
 
     private const val TAG = "RoutineBridge"
 
-    private val queue = RoutineCommandQueue()
-    private val schedulingLock = Any()
     private val worker = Executors.newSingleThreadExecutor { task ->
         Thread(task, "SamsungRoutineWorker")
     }
+
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val drainCallbacks = mutableListOf<() -> Unit>()
+
+    private val coordinator = RoutineWorkerCoordinator {
+        worker.execute { drainQueue() }
+    }
 
     @Volatile
     private var appContext: Context? = null
 
-    private var workerScheduled = false
-
     fun whenWorkerStopped(callback: () -> Unit) {
-        val runNow = synchronized(schedulingLock) {
-            if (workerScheduled || queue.hasInFlight()) {
-                drainCallbacks.add(callback)
-                false
-            } else {
-                true
-            }
-        }
-        if (runNow) callback()
+        coordinator.whenWorkerStopped(callback)
     }
 
-    fun isWorkerStopped(): Boolean = synchronized(schedulingLock) {
-        !workerScheduled && !queue.hasInFlight()
-    }
+    fun isWorkerStopped(): Boolean =
+        coordinator.isWorkerStopped()
 
     fun enqueue(
         context: Context,
@@ -49,52 +42,36 @@ internal object SamsungRoutineDispatcher {
         requestId: String,
         onQueueDrained: () -> Unit
     ) {
-        synchronized(schedulingLock) {
-            appContext = context.applicationContext
-            drainCallbacks.add(onQueueDrained)
+        appContext = context.applicationContext
 
-            val enqueueResult = queue.enqueue(
-                input.routineUuid,
-                BooleanStateTransform.from(input.action),
-                requestId
-            )
+        val result = coordinator.enqueue(
+            routineUuid = input.routineUuid,
+            transform = BooleanStateTransform.from(input.action),
+            requestId = requestId,
+            onWorkerStopped = onQueueDrained
+        )
 
-            if (enqueueResult.cancelledRequestIds.isNotEmpty()) {
-                Log.i(
-                    TAG,
-                    "DISPATCH_COALESCED_CANCELLED uuid=${input.routineUuid} " +
-                        "requests=${enqueueResult.cancelledRequestIds.joinToString(",")}"
-                )
-            }
-
+        if (result.cancelledRequestIds.isNotEmpty()) {
             Log.i(
                 TAG,
-                "DISPATCH_ENQUEUED request=$requestId input=${input.id} " +
-                    "uuid=${input.routineUuid} action=${input.action}"
+                "DISPATCH_COALESCED_CANCELLED uuid=${input.routineUuid} " +
+                    "requests=${result.cancelledRequestIds.joinToString(",")}"
             )
-
-            if (!workerScheduled) {
-                workerScheduled = true
-                worker.execute { drainQueue() }
-            }
         }
+
+        Log.i(
+            TAG,
+            "DISPATCH_ENQUEUED request=$requestId input=${input.id} " +
+                "uuid=${input.routineUuid} action=${input.action}"
+        )
     }
 
     private fun drainQueue() {
         while (true) {
-            val uuid = queue.nextPendingUuid()
+            val uuid = coordinator.nextPendingUuid()
 
             if (uuid == null) {
-                val queueEmpty = synchronized(schedulingLock) {
-                    if (queue.nextPendingUuid() == null) {
-                        workerScheduled = false
-                        true
-                    } else {
-                        false
-                    }
-                }
-
-                if (queueEmpty) {
+                if (coordinator.stopIfNoPending()) {
                     notifyWorkerStopped()
                     return
                 }
@@ -103,7 +80,7 @@ internal object SamsungRoutineDispatcher {
 
             // A true result means a confirmed operation required correction,
             // but that correction failed. Keep its target pending and wait
-            // for a genuinely new event before resuming the queue.
+            // for a genuinely new event before resuming the worker.
             if (processRoutine(uuid)) {
                 notifyWorkerStopped()
                 return
@@ -112,13 +89,7 @@ internal object SamsungRoutineDispatcher {
     }
 
     private fun notifyWorkerStopped() {
-        val callbacks = synchronized(schedulingLock) {
-            if (workerScheduled || queue.hasInFlight()) {
-                null
-            } else {
-                drainCallbacks.toList().also { drainCallbacks.clear() }
-            }
-        } ?: return
+        val callbacks = coordinator.takeCallbacksIfStopped() ?: return
 
         callbacks.forEach { callback ->
             try {
@@ -137,44 +108,33 @@ internal object SamsungRoutineDispatcher {
         try {
             val context = appContext
                 ?: throw IllegalStateException("Dispatcher context is unavailable")
+
             val repository = ManualRoutineRepository(context)
             val executor = RoutineActionExecutor(context, repository)
 
-            // Atomically move the pending command to in-flight and take
-            // the request ID belonging to that exact pending command.
-            val start = synchronized(schedulingLock) {
-                val command = queue.beginNext(uuid)
-                if (command == null) {
-                    null
-                } else {
-                    command to queue.inFlightRequestIds()
-                }
-            } ?: return false
+            // Move the selected pending command to in-flight atomically.
+            val start = coordinator.beginNext(uuid) ?: return false
 
-            val started = start.first
-            var requestIds = start.second
-            requestId = requestIds.firstOrNull() ?: "unknown"
+            requestId = start.requestIds.firstOrNull() ?: "unknown"
 
             Log.i(
                 TAG,
                 "DISPATCH_START request=$requestId " +
-                    "related=${requestIds.drop(1).joinToString(",")} " +
-                    "uuid=$uuid transform=${started.transform}"
+                    "related=${start.requestIds.drop(1).joinToString(",")} " +
+                    "uuid=$uuid transform=${start.command.transform}"
             )
 
             while (true) {
-                // Execute only the frozen physical transform. The executor
-                // supplies its Provider baseline before launching Samsung.
-                val transform = queue.inFlightAttemptTransform() ?: return false
-                requestIds = queue.inFlightRequestIds()
+                val attempt = coordinator.currentAttempt() ?: return false
+                val requestIds = attempt.requestIds
                 requestId = requestIds.firstOrNull() ?: "unknown"
 
                 val result = executor.executeOnce(
                     routineUuid = uuid,
-                    transform = transform,
+                    transform = attempt.transform,
                     requestIds = requestIds,
                     onStateRead = { state ->
-                        check(queue.setInFlightBaseline(state) != null) {
+                        check(coordinator.setInFlightBaseline(state) != null) {
                             "In-flight command disappeared before launch"
                         }
                     }
@@ -185,12 +145,14 @@ internal object SamsungRoutineDispatcher {
                         performedLaunch = true
                         confirmedAttempt = true
                     }
+
                     RoutineExecutionStatus.SKIPPED -> {
-                        // Provider already confirmed the requested state.
                         confirmedAttempt = true
                     }
+
                     RoutineExecutionStatus.TIMEOUT -> {
-                        releaseAfterFailure(confirmedAttempt)
+                        coordinator.releaseAfterFailure(confirmedAttempt)
+
                         Log.w(
                             TAG,
                             "DISPATCH_TIMEOUT request=$requestId uuid=$uuid " +
@@ -202,78 +164,64 @@ internal object SamsungRoutineDispatcher {
                     }
                 }
 
-                // Reconcile against the latest Provider state and all events
-                // received while the physical operation was running.
                 val actual = result.actualState
                     ?: throw IllegalStateException(
                         context.getString(R.string.routine_state_unknown)
                     )
 
-                // Include events received while the physical operation
-                // was running before the queue potentially clears in-flight.
-                requestIds = queue.inFlightRequestIds()
-                requestId = requestIds.firstOrNull() ?: "unknown"
+                // Capture causal IDs before successful reconciliation can
+                // clear the in-flight command.
+                val completedRequestIds = coordinator.inFlightRequestIds()
+                requestId = completedRequestIds.firstOrNull() ?: "unknown"
 
-                if (queue.advanceAfterSuccess(result.initialState, actual)) {
+                if (
+                    coordinator.advanceAfterSuccess(
+                        result.initialState,
+                        actual
+                    )
+                ) {
                     val finalStatus =
                         if (performedLaunch) "SUCCESS" else "SKIPPED"
 
                     Log.i(
                         TAG,
                         "DISPATCH_$finalStatus request=$requestId " +
-                            "related=${requestIds.drop(1).joinToString(",")} " +
+                            "related=${completedRequestIds.drop(1).joinToString(",")} " +
                             "uuid=$uuid state=$actual"
                     )
                     return false
                 }
 
-                requestIds = queue.inFlightRequestIds()
-                requestId = requestIds.firstOrNull() ?: "unknown"
+                val nextRequestIds = coordinator.inFlightRequestIds()
+                requestId = nextRequestIds.firstOrNull() ?: "unknown"
 
                 Log.i(
                     TAG,
                     "DISPATCH_RECONCILE request=$requestId " +
-                        "related=${requestIds.drop(1).joinToString(",")} " +
+                        "related=${nextRequestIds.drop(1).joinToString(",")} " +
                         "uuid=$uuid actual=$actual " +
-                        "desired=${queue.inFlightDesiredState()}"
+                        "desired=${coordinator.inFlightDesiredState()}"
                 )
             }
         } catch (error: Exception) {
-            val active = releaseAfterFailure(confirmedAttempt)
+            val released = coordinator.releaseAfterFailure(confirmedAttempt)
 
             Log.e(
                 TAG,
                 "DISPATCH_FAILED request=$requestId uuid=$uuid " +
-                    "released=${active != null} deferred=$confirmedAttempt " +
+                    "released=${released != null} deferred=$confirmedAttempt " +
                     "error=${error.message}",
                 error
             )
-            showFailure(error)
 
+            showFailure(error)
             return confirmedAttempt
         }
     }
 
-    /**
-     * Stop draining without discarding pending work.
-     * The next enqueue will schedule the single worker again.
-     */
-    private fun releaseAfterFailure(
-        preserveAttempt: Boolean
-    ): RoutineCommandSnapshot? = synchronized(schedulingLock) {
-        val released = queue.releaseInFlight(
-            preserveAttempt = preserveAttempt
-        )
-
-        if (preserveAttempt) {
-            workerScheduled = false
-        }
-
-        released
-    }
-
     private fun showFailure(error: Exception) {
         val context = appContext ?: return
+
         val message = if (error is RootCoreAccessException) {
             context.getString(R.string.root_access_unavailable)
         } else {
