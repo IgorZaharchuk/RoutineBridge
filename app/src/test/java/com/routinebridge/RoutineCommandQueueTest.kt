@@ -415,7 +415,10 @@ class RoutineCommandQueueTest {
 
         queue.enqueue(10L, BooleanStateTransform.TOGGLE, "followup")
 
-        assertEquals(listOf("initial"), queue.inFlightRequestIds())
+        assertEquals(
+            listOf("initial", "followup"),
+            queue.inFlightRequestIds()
+        )
         assertFalse(queue.advanceAfterSuccess(false, true))
         assertEquals(listOf("followup", "initial"), queue.inFlightRequestIds())
     }
