@@ -33,7 +33,7 @@ class MainActivity : Activity() {
         super.attachBaseContext(AppLocale.wrap(newBase))
     }
 
-    private val store by lazy { RoutineInputStore(this) }
+    private val inputPersistence by lazy { RoutineInputPersistence(this) }
     private val repository by lazy { ManualRoutineRepository(applicationContext) }
     private var inputs = emptyList<RoutineInput>()
     private var routines = emptyList<ManualRoutine>()
@@ -80,21 +80,18 @@ class MainActivity : Activity() {
         window.decorView.systemUiVisibility = 0
 
         try {
-            inputs = store.load()
+            inputs = inputPersistence.load()
         } catch (e: Exception) {
             inputLoadError = e.message ?: e.javaClass.simpleName
             inputs = emptyList()
         }
         buildScreen()
-        shortcutPublishFailed = if (inputLoadError != null) {
-            true
+        if (inputLoadError != null) {
+            shortcutPublishFailed = true
         } else {
-            shortcutLimitError(inputs)?.let {
-                shortcutPublishError = it
-                true
-            } ?: runCatching {
-                !RoutineShortcutPublisher(this).publishAll(inputs)
-            }.getOrDefault(true)
+            val publication = inputPersistence.publishLoaded(inputs)
+            shortcutPublishFailed = !publication.updated
+            shortcutPublishError = publication.error
         }
         refreshRoutines()
         showShortcutError(intent)
@@ -254,13 +251,6 @@ class MainActivity : Activity() {
             }
         )
 
-    private fun shortcutLimitError(items: List<RoutineInput>): String? {
-        val limit = getSystemService(android.content.pm.ShortcutManager::class.java)
-            .maxShortcutCountPerActivity
-        if (items.size <= limit) return null
-        return getString(R.string.shortcut_limit)
-    }
-
     private fun refreshRoutines() {
         val requestId = ++refreshRequestId
         setStatus(StatusType.LOADING, getString(R.string.loading_root_routines))
@@ -414,28 +404,15 @@ class MainActivity : Activity() {
             return false
         }
         return try {
-            val removedInputIds = inputs
-                .filter { oldInput -> updated.none { it.id == oldInput.id } }
-                .map { it.id }
-
-            store.save(updated)
+            val result = inputPersistence.save(
+                previous = inputs,
+                updated = updated,
+                disabledMessage = getString(R.string.shortcut_deleted)
+            )
             inputs = updated
 
-            val limitError = shortcutLimitError(updated)
-            val shortcutsUpdated = if (limitError != null) {
-                shortcutPublishError = limitError
-                false
-            } else {
-                runCatching {
-                    RoutineShortcutPublisher(this).publishAll(
-                        updated,
-                        removedInputIds,
-                        getString(R.string.shortcut_deleted)
-                    )
-                }.getOrDefault(false)
-            }
-
-            if (shortcutsUpdated) shortcutPublishError = null
+            val shortcutsUpdated = result.shortcutsUpdated
+            shortcutPublishError = result.shortcutError
             shortcutPublishFailed = !shortcutsUpdated
             editingInputId = null
             if (shortcutsUpdated) {

@@ -40,6 +40,7 @@ class RootCoreDiagnosticsActivity : Activity() {
     private lateinit var routineSelection: LinearLayout
     private lateinit var inputContainer: LinearLayout
     private var availableRoutines: List<ManualRoutine> = emptyList()
+    private val inputPersistence by lazy { RoutineInputPersistence(this) }
     private var diagnosticInputs: List<RoutineInput> = emptyList()
     private var editingDiagnosticInputId: String? = null
     private val selectedRoutineUuids = linkedSetOf<Long>()
@@ -374,7 +375,7 @@ class RootCoreDiagnosticsActivity : Activity() {
     private fun loadDiagnosticInputs() {
         worker.execute {
             try {
-                val loaded = RoutineInputStore(applicationContext).load()
+                val loaded = inputPersistence.load()
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     diagnosticInputs = loaded
@@ -465,26 +466,23 @@ class RootCoreDiagnosticsActivity : Activity() {
 
     private fun saveDiagnosticInputs(updated: List<RoutineInput>) {
         try {
-            RoutineInputStore(this).save(updated)
-            val previous = diagnosticInputs
+            val result = inputPersistence.save(
+                previous = diagnosticInputs,
+                updated = updated,
+                disabledMessage = getString(R.string.shortcut_deleted)
+            )
+
             diagnosticInputs = updated
             editingDiagnosticInputId = null
             renderDiagnosticInputs()
 
-            val removedIds = previous
-                .filter { old -> updated.none { it.id == old.id } }
-                .map { it.id }
-
-            val shortcutsUpdated = RoutineShortcutPublisher(this).publishAll(
-                updated,
-                removedIds,
-                getString(R.string.shortcut_deleted)
-            )
-
-            if (shortcutsUpdated) {
+            if (result.shortcutsUpdated) {
                 log(getString(R.string.diagnostics_inputs_saved, updated.size))
             } else {
-                log(getString(R.string.diagnostics_shortcuts_update_unconfirmed))
+                log(
+                    result.shortcutError
+                        ?: getString(R.string.diagnostics_shortcuts_update_unconfirmed)
+                )
                 AlertDialog.Builder(this)
                     .setTitle(getString(R.string.diagnostics_input_saved_title))
                     .setMessage(getString(R.string.diagnostics_shortcuts_update_unconfirmed_message))

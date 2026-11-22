@@ -15,25 +15,20 @@ class RoutineShortcutPublisher(private val context: Context) {
         disabledMessage: CharSequence? = null
     ): Boolean {
         val manager = context.getSystemService(ShortcutManager::class.java)
-        if (inputs.size > manager.maxShortcutCountPerActivity) {
-            throw IllegalStateException(
-                messages.getString(
-                    R.string.dynamic_shortcut_limit,
-                    manager.maxShortcutCountPerActivity
-                )
-            )
-        }
-
+        var removedShortcutsDisabled = true
         if (removedInputIds.isNotEmpty()) {
-            manager.disableShortcuts(
-                removedInputIds.map { "routine_input_$it" },
-                disabledMessage ?: messages.getString(
-                    R.string.shortcut_input_missing
+            removedShortcutsDisabled = runCatching {
+                manager.disableShortcuts(
+                    removedInputIds.map { "routine_input_$it" },
+                    disabledMessage ?: messages.getString(
+                        R.string.shortcut_input_missing
+                    )
                 )
-            )
+            }.isSuccess
         }
 
-        val shortcuts = inputs.map { input ->
+        val withinLimit = inputs.size <= manager.maxShortcutCountPerActivity
+        val shortcuts = inputs.take(manager.maxShortcutCountPerActivity).map { input ->
             val intent = Intent(context, ShortcutRunActivity::class.java).apply {
                 action = MainActivity.ACTION_RUN_INPUT
                 putExtra(MainActivity.EXTRA_INPUT_ID, input.id)
@@ -45,6 +40,6 @@ class RoutineShortcutPublisher(private val context: Context) {
                 .setIntent(intent)
                 .build()
         }
-        return manager.setDynamicShortcuts(shortcuts)
+        return manager.setDynamicShortcuts(shortcuts) && withinLimit && removedShortcutsDisabled
     }
 }
