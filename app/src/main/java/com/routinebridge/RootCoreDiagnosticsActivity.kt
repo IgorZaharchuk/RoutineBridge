@@ -67,7 +67,9 @@ class RootCoreDiagnosticsActivity : Activity() {
             14f, secondary
         ))
 
-        addButton(content, "1. Открыть root-сессию") {
+        val rootTests = collapsibleGroup(content, "Root Core — тесты 1–5")
+
+        addButton(rootTests, "1. Открыть root-сессию") {
             runTest("Открытие сессии") {
                 check(session == null) { "Сессия уже открыта. Сначала закрой её." }
                 val start = SystemClock.elapsedRealtime()
@@ -76,7 +78,7 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        addButton(content, "2. Ping и проверка UID") {
+        addButton(rootTests, "2. Ping и проверка UID") {
             runTest("Ping") {
                 val uid = requireSession().ping()
                 check(uid == 0) { "Ожидался UID 0, получен $uid" }
@@ -84,13 +86,13 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        addButton(content, "3. Первый запрос Samsung Provider") {
+        addButton(rootTests, "3. Первый запрос Samsung Provider") {
             runTest("Первый запрос Provider") {
                 queryReport(requireSession())
             }
         }
 
-        addButton(content, "4. Пять повторных запросов") {
+        addButton(rootTests, "4. Пять повторных запросов") {
             runTest("Повторные запросы") {
                 val current = requireSession()
                 val results = (1..5).map { index ->
@@ -104,7 +106,7 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        addButton(content, "5. Закрыть сессию и проверить процесс") {
+        addButton(rootTests, "5. Закрыть сессию и проверить процесс") {
             runTest("Закрытие сессии") {
                 val current = requireSession()
                 current.close()
@@ -120,12 +122,14 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        content.addView(text(
+        val samsungTests = collapsibleGroup(content, "Samsung Dispatcher — тесты 6–7")
+
+        samsungTests.addView(text(
             "Проверка запуска Samsung-сценариев",
             17f, white
         ).apply { setPadding(0, dp(18), 0, dp(6)) })
 
-        content.addView(text(
+        samsungTests.addView(text(
             "Выбери сценарии для прямых проверок Dispatcher",
             14f, secondary
         ))
@@ -133,18 +137,20 @@ class RootCoreDiagnosticsActivity : Activity() {
         routineSelection = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        content.addView(routineSelection, LinearLayout.LayoutParams(-1, -2))
+        samsungTests.addView(routineSelection, LinearLayout.LayoutParams(-1, -2))
 
-        addButton(content, "Обновить список сценариев") {
+        addButton(samsungTests, "Обновить список сценариев") {
             loadRoutines()
         }
 
-        content.addView(text(
+        val inputTests = collapsibleGroup(content, "Входы RoutineBridge")
+
+        inputTests.addView(text(
             "Проверка входов RoutineBridge",
             17f, white
         ).apply { setPadding(0, dp(22), 0, dp(6)) })
 
-        content.addView(text(
+        inputTests.addView(text(
             "Нажатие на существующий вход запускает штатную цепочку " +
                 "ShortcutRunActivity → Service → Dispatcher → Samsung Provider. " +
                 "Настройки входов не изменяются.",
@@ -154,9 +160,9 @@ class RootCoreDiagnosticsActivity : Activity() {
         inputContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        content.addView(inputContainer, LinearLayout.LayoutParams(-1, -2))
+        inputTests.addView(inputContainer, LinearLayout.LayoutParams(-1, -2))
 
-        addButton(content, "6. Запустить первый выбранный сценарий", blue) {
+        addButton(samsungTests, "6. Запустить первый выбранный сценарий", blue) {
             val selected = selectedRoutines(1)
             if (selected == null) {
                 log("Выбери сценарий в первом списке.")
@@ -176,7 +182,7 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        addButton(content, "7. Последовательно запустить три сценария", blue) {
+        addButton(samsungTests, "7. Последовательно запустить три сценария", blue) {
             val selected = selectedRoutines(3)
             if (selected == null) {
                 log("Выбери три разных сценария.")
@@ -230,6 +236,11 @@ class RootCoreDiagnosticsActivity : Activity() {
                     ).show()
                 }
             }
+        }
+
+        addButton(content, "Очистить результаты и журнал") {
+            output.text = "Результаты тестов появятся здесь."
+            journal.text = "Журнал очищен."
         }
 
         content.addView(text("Журнал RoutineBridge", 16f, white))
@@ -546,11 +557,20 @@ class RootCoreDiagnosticsActivity : Activity() {
             check(current.isEnabled == true) {
                 "${label}${index + 1}: '${current.name}' выключен или состояние неизвестно"
             }
-            check(current.isRunning == false) {
-                "${label}${index + 1}: '${current.name}' уже запущен или состояние неизвестно"
+            val initialRunning = current.isRunning
+            if (initialRunning == null) {
+                report.add(
+                    "${label}${index + 1}: UNKNOWN '${current.name}', " +
+                        "Provider не сообщил is_running"
+                )
+                report.add("RESULT: тест остановлен — состояние сценария неизвестно")
+                return report.joinToString("\n")
             }
 
-            report.add("${label}${index + 1}: READY '${current.name}', is_running=false")
+            report.add(
+                "${label}${index + 1}: READY '${current.name}', " +
+                    "is_running=$initialRunning"
+            )
 
             val latch = CountDownLatch(1)
             val requestId = UUID.randomUUID().toString()
@@ -584,7 +604,10 @@ class RootCoreDiagnosticsActivity : Activity() {
                     "is_running=${confirmed.isRunning}"
             }
 
-            report.add("${label}${index + 1}: CONFIRMED is_running=true")
+            val resultStatus = if (initialRunning) "SKIPPED" else "CONFIRMED"
+            report.add(
+                "${label}${index + 1}: $resultStatus is_running=true"
+            )
         }
 
         report.add("RESULT: все выбранные сценарии подтверждены Provider")
@@ -645,6 +668,43 @@ class RootCoreDiagnosticsActivity : Activity() {
         runOnUiThread {
             output.append("\n\n[$time] $message")
         }
+    }
+
+    private fun collapsibleGroup(
+        parent: LinearLayout,
+        title: String
+    ): LinearLayout {
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = android.view.View.GONE
+            setPadding(0, dp(5), 0, dp(8))
+        }
+
+        var expanded = false
+        val header = text("▸  $title", 15f, white).apply {
+            setPadding(dp(14), dp(13), dp(14), dp(13))
+            background = rounded(Color.rgb(38, 45, 58), 10)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                expanded = !expanded
+                body.visibility = if (expanded) {
+                    android.view.View.VISIBLE
+                } else {
+                    android.view.View.GONE
+                }
+                text = (if (expanded) "▾  " else "▸  ") + title
+            }
+        }
+
+        parent.addView(
+            header,
+            LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(12)
+            }
+        )
+        parent.addView(body, LinearLayout.LayoutParams(-1, -2))
+        return body
     }
 
     private fun addButton(
