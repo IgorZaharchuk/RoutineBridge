@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -12,8 +13,6 @@ import android.os.SystemClock
 import android.net.Uri
 import android.view.Gravity
 import android.widget.Button
-import android.widget.ArrayAdapter
-import android.widget.Spinner
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -33,8 +32,12 @@ class RootCoreDiagnosticsActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private var session: RootCoreSession? = null
     private lateinit var output: TextView
-    private lateinit var routineSpinners: List<Spinner>
+    private lateinit var routineSelection: LinearLayout
+    private lateinit var inputContainer: LinearLayout
     private var availableRoutines: List<ManualRoutine> = emptyList()
+    private var diagnosticInputs: List<RoutineInput> = emptyList()
+    private val selectedRoutineUuids = linkedSetOf<Long>()
+    private val collapsedDiagnosticGroups = mutableSetOf<Long>()
 
     private val providerUri = Uri.parse(
         "content://com.samsung.android.app.routines.externalprovider/" +
@@ -120,22 +123,36 @@ class RootCoreDiagnosticsActivity : Activity() {
             17f, white
         ).apply { setPadding(0, dp(18), 0, dp(6)) })
 
-        routineSpinners = List(3) { index ->
-            Spinner(this).also { spinner ->
-                prepareSpinner(spinner)
-                content.addView(text("Сценарий ${index + 1}", 13f, secondary))
-                content.addView(
-                    spinner,
-                    LinearLayout.LayoutParams(-1, dp(48)).apply {
-                        bottomMargin = dp(5)
-                    }
-                )
-            }
+        content.addView(text(
+            "Выбери сценарии для прямых проверок Dispatcher",
+            14f, secondary
+        ))
+
+        routineSelection = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
         }
+        content.addView(routineSelection, LinearLayout.LayoutParams(-1, -2))
 
         addButton(content, "Обновить список сценариев") {
             loadRoutines()
         }
+
+        content.addView(text(
+            "Проверка входов RoutineBridge",
+            17f, white
+        ).apply { setPadding(0, dp(22), 0, dp(6)) })
+
+        content.addView(text(
+            "Нажатие на существующий вход запускает штатную цепочку " +
+                "ShortcutRunActivity → Service → Dispatcher → Samsung Provider. " +
+                "Настройки входов не изменяются.",
+            13f, secondary
+        ))
+
+        inputContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        content.addView(inputContainer, LinearLayout.LayoutParams(-1, -2))
 
         addButton(content, "6. Запустить первый выбранный сценарий", blue) {
             val selected = selectedRoutines(1)
@@ -185,12 +202,24 @@ class RootCoreDiagnosticsActivity : Activity() {
             setTextIsSelectable(true)
         }
 
-        addButton(content, "Скопировать диагностику") {
-            val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(
-                ClipData.newPlainText("Root Core diagnostics", output.text)
-            )
-            Toast.makeText(this, "Диагностика скопирована", Toast.LENGTH_SHORT).show()
+        addButton(content, "Скопировать тесты и журнал RoutineBridge") {
+            val testReport = output.text.toString()
+            worker.execute {
+                val journal = captureRoutineBridgeLogcat()
+                val combined = testReport + "\\n\\n===== LOGCAT: RoutineBridge =====\\n" + journal
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(
+                        ClipData.newPlainText("RoutineBridge diagnostics", combined)
+                    )
+                    Toast.makeText(
+                        this,
+                        "Результаты и журнал скопированы",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
         }
 
         content.addView(output)
@@ -199,6 +228,7 @@ class RootCoreDiagnosticsActivity : Activity() {
         scroll.addView(content)
         setContentView(scroll)
         loadRoutines()
+        loadDiagnosticInputs()
     }
 
     private fun loadRoutines() {
@@ -208,18 +238,10 @@ class RootCoreDiagnosticsActivity : Activity() {
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     availableRoutines = loaded
-                    val labels = listOf("— Выбери сценарий —") +
-                        loaded.map { it.name }
-                    routineSpinners.forEach { spinner ->
-                        val adapter = ArrayAdapter(
-                            this,
-                            android.R.layout.simple_spinner_item,
-                            labels
-                        )
-                        adapter.setDropDownViewResource(
-                            android.R.layout.simple_spinner_dropdown_item
-                        )
-                        spinner.adapter = adapter
+                    selectedRoutineUuids.retainAll(loaded.map { it.uuid }.toSet())
+                    renderRoutineSelection()
+                    if (::inputContainer.isInitialized) {
+                        renderDiagnosticInputs()
                     }
                     log("Samsung Provider: загружено сценариев — ${loaded.size}")
                 }
@@ -232,14 +254,147 @@ class RootCoreDiagnosticsActivity : Activity() {
         }
     }
 
+    private fun renderRoutineSelection() {
+        if (!::routineSelection.isInitialized) return
+        routineSelection.removeAllViews()
+
+        val selected = selectedRoutineUuids.size
+        routineSelection.addView(text(
+            "Выбрано: $selected из 3. Нажимай на карточки, чтобы изменить выбор.",
+            12f, secondary
+        ))
+
+        availableRoutines.forEach { routine ->
+            val isSelected = routine.uuid in selectedRoutineUuids
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = rounded(
+                    if (isSelected) Color.rgb(48, 64, 86)
+                    else Color.rgb(30, 30, 30), 12
+                )
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    if (routine.uuid in selectedRoutineUuids) {
+                        selectedRoutineUuids.remove(routine.uuid)
+                    } else if (selectedRoutineUuids.size < 3) {
+                        selectedRoutineUuids.add(routine.uuid)
+                    } else {
+                        Toast.makeText(
+                            this@RootCoreDiagnosticsActivity,
+                            "Можно выбрать не более трёх сценариев",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    renderRoutineSelection()
+                }
+            }
+            card.addView(text(
+                if (isSelected) "✓" else "○",
+                20f, if (isSelected) Color.rgb(120, 200, 140) else secondary
+            ).apply { setPadding(0, 0, dp(12), 0) })
+            card.addView(text(
+                routine.name, 15f, white
+            ), LinearLayout.LayoutParams(0, -2, 1f))
+            routineSelection.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(5)
+            })
+        }
+
+        if (availableRoutines.isEmpty()) {
+            routineSelection.addView(text(
+                "Сценарии не найдены. Обнови список.",
+                13f, secondary
+            ))
+        }
+    }
+
     private fun selectedRoutines(count: Int): List<ManualRoutine>? {
-        if (!::routineSpinners.isInitialized) return null
-        val selected = routineSpinners.take(count).mapNotNull { spinner ->
-            availableRoutines.getOrNull(spinner.selectedItemPosition - 1)
+        if (selectedRoutineUuids.size < count) return null
+        val selected = selectedRoutineUuids.take(count).mapNotNull { uuid ->
+            availableRoutines.firstOrNull { it.uuid == uuid }
         }
         if (selected.size != count) return null
         if (selected.map { it.uuid }.distinct().size != count) return null
         return selected
+    }
+
+    private fun loadDiagnosticInputs() {
+        worker.execute {
+            try {
+                val loaded = RoutineInputStore(applicationContext).load()
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    diagnosticInputs = loaded
+                    renderDiagnosticInputs()
+                    log("RoutineBridge: загружено сохранённых входов — ${loaded.size}")
+                }
+            } catch (error: Throwable) {
+                log(
+                    "Ошибка чтения входов: " +
+                        "${error.javaClass.simpleName}: ${error.message}"
+                )
+            }
+        }
+    }
+
+    private fun renderDiagnosticInputs() {
+        if (!::inputContainer.isInitialized) return
+        RoutineInputCards.render(
+            activity = this,
+            container = inputContainer,
+            inputs = diagnosticInputs,
+            routines = availableRoutines,
+            collapsedGroups = collapsedDiagnosticGroups,
+            showInputCount = false,
+            emptyText = "Сохранённых входов пока нет.",
+            expandAllText = "Развернуть все группы",
+            collapseAllText = "Свернуть все группы",
+            actionTitle = { action ->
+                when (action) {
+                    RoutineInputAction.ENABLE -> getString(R.string.action_enable)
+                    RoutineInputAction.DISABLE -> getString(R.string.action_disable)
+                    RoutineInputAction.TOGGLE -> getString(R.string.action_toggle)
+                }
+            },
+            onInputClick = { input -> confirmDiagnosticInput(input) },
+            onEditClick = {},
+            expandedContent = { null }
+        )
+    }
+
+    private fun confirmDiagnosticInput(input: RoutineInput) {
+        val requestId = UUID.randomUUID().toString()
+        AlertDialog.Builder(this)
+            .setTitle("Выполнить вход?")
+            .setMessage(
+                "Вход «${input.label}» выполнит действие " +
+                    "«${input.action}» для сценария «${input.routineName}». " +
+                    "Состояние устройства может измениться.\n\nRequest: $requestId"
+            )
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Запустить") { _, _ ->
+                log("INPUT_TEST_START request=$requestId inputId=${input.id}")
+                val launch = Intent(
+                    this,
+                    ShortcutRunActivity::class.java
+                ).apply {
+                    action = MainActivity.ACTION_RUN_INPUT
+                    putExtra(MainActivity.EXTRA_INPUT_ID, input.id)
+                    putExtra(ShortcutRunActivity.EXTRA_REQUEST_ID, requestId)
+                }
+                try {
+                    startActivity(launch)
+                } catch (error: Throwable) {
+                    log(
+                        "INPUT_TEST_LAUNCH_FAILED request=$requestId " +
+                            "${error.javaClass.simpleName}: ${error.message}"
+                    )
+                }
+            }
+            .show()
     }
 
     private fun runDispatcherSequence(
@@ -396,10 +551,27 @@ class RootCoreDiagnosticsActivity : Activity() {
         )
     }
 
-    private fun prepareSpinner(spinner: Spinner) {
-        spinner.setPopupBackgroundDrawable(rounded(Color.rgb(30, 30, 30), 8))
-        spinner.backgroundTintList =
-            android.content.res.ColorStateList.valueOf(Color.rgb(48, 64, 86))
+    private fun captureRoutineBridgeLogcat(): String {
+        return try {
+            val process = ProcessBuilder(
+                "logcat", "-d", "-t", "1500", "-v", "time",
+                "-s", "RoutineBridge:I", "RoutineBridge:W", "RoutineBridge:E"
+            ).redirectErrorStream(true).start()
+
+            val captured = process.inputStream.bufferedReader().use { it.readText() }
+            val finished = process.waitFor()
+            if (finished != 0) {
+                "LOGCAT_UNAVAILABLE: logcat завершился с кодом $finished\\n$captured"
+            } else if (captured.isBlank()) {
+                "Для тега RoutineBridge записей нет."
+            } else {
+                captured
+            }
+        } catch (error: SecurityException) {
+            "LOGCAT_UNAVAILABLE: доступ запрещён: ${error.message}"
+        } catch (error: Throwable) {
+            "LOGCAT_UNAVAILABLE: ${error.javaClass.simpleName}: ${error.message}"
+        }
     }
 
     private fun rounded(color: Int, radius: Int) =

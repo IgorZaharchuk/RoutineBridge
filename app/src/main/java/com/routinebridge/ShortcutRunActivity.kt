@@ -14,9 +14,15 @@ class ShortcutRunActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val requestId = intent?.getStringExtra(EXTRA_REQUEST_ID)
+            ?.takeIf { it.isNotBlank() }
+            ?: UUID.randomUUID().toString().take(8)
+
+        intent?.putExtra(EXTRA_REQUEST_ID, requestId)
+
         Log.i(
             LOG_TAG,
-            "SHORTCUT_ACTIVITY_CREATE request=${intent?.getStringExtra(EXTRA_REQUEST_ID)} " +
+            "SHORTCUT_ACTIVITY_CREATE request=$requestId " +
                 "action=${intent?.action} " +
                 "inputId=${intent?.getStringExtra(MainActivity.EXTRA_INPUT_ID)} " +
                 "component=${intent?.component?.flattenToShortString()}"

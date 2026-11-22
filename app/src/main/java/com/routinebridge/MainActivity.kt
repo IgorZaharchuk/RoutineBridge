@@ -213,130 +213,27 @@ class MainActivity : Activity() {
     }
 
     private fun renderInputs() {
-        inputContainer.removeAllViews()
-
-        if (inputs.isEmpty()) {
-            inputContainer.addView(text(
-                getString(R.string.empty_inputs),
-                14f, secondary
-            ).apply {
-                setPadding(dp(14), dp(18), dp(14), dp(18))
-                background = rounded(variant, 12)
-            }, matchWrap())
-            return
-        }
-
-        val groups = inputs.groupBy { it.routineUuid }
-        val allCollapsed = groups.keys.all { it in collapsedGroups }
-
-        inputContainer.addView(
-            button(if (allCollapsed) getString(R.string.expand_all) else getString(R.string.collapse_all)) {
-                if (allCollapsed) collapsedGroups.clear()
-                else collapsedGroups.addAll(groups.keys)
+        RoutineInputCards.render(
+            activity = this,
+            container = inputContainer,
+            inputs = inputs,
+            routines = routines,
+            collapsedGroups = collapsedGroups,
+            showInputCount = true,
+            emptyText = getString(R.string.empty_inputs),
+            expandAllText = getString(R.string.expand_all),
+            collapseAllText = getString(R.string.collapse_all),
+            actionTitle = ::actionTitle,
+            onInputClick = {},
+            onEditClick = { input ->
+                editingInputId =
+                    if (editingInputId == input.id) null else input.id
                 renderInputs()
             },
-            matchWrap().apply { bottomMargin = dp(8) }
+            expandedContent = { input ->
+                if (editingInputId == input.id) createInlineEditor(input) else null
+            }
         )
-
-        groups.forEach { (uuid, group) ->
-            val groupBlock = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-            }
-
-            val header = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(dp(14), dp(14), dp(14), dp(14))
-                background = rounded(variant, 12)
-                isClickable = true
-                isFocusable = true
-            }
-
-            header.addView(
-                text(if (uuid in collapsedGroups) "›" else "⌄", 22f, blue, true)
-                    .also { it.setPadding(0, 0, dp(12), 0) }
-            )
-            val currentRoutine = routines.firstOrNull { it.uuid == uuid }
-            val routineName = currentRoutine?.name ?: group.first().routineName
-            val displayedRoutineName = if (currentRoutine == null) {
-                "$routineName${getString(R.string.routine_not_found_suffix)}"
-            } else {
-                routineName
-            }
-
-            header.addView(
-                text(displayedRoutineName, 17f, white, true),
-                LinearLayout.LayoutParams(0, -2, 1f)
-            )
-            header.addView(
-                text(
-                    resources.getQuantityString(
-                        R.plurals.input_count,
-                        group.size,
-                        group.size
-                    ),
-                    12f,
-                    secondary
-                )
-            )
-
-            header.setOnClickListener {
-                if (!collapsedGroups.add(uuid)) collapsedGroups.remove(uuid)
-                renderInputs()
-            }
-            groupBlock.addView(header, matchWrap())
-
-            if (uuid !in collapsedGroups) {
-                group.forEach { input ->
-                    val card = LinearLayout(this).apply {
-                        orientation = LinearLayout.VERTICAL
-                        setPadding(dp(14), dp(10), dp(14), dp(10))
-                        background = rounded(surface, 12)
-                    }
-
-                    val row = LinearLayout(this).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = android.view.Gravity.CENTER_VERTICAL
-                    }
-                    val details = LinearLayout(this).apply {
-                        orientation = LinearLayout.VERTICAL
-                    }
-                    details.addView(text(input.label, 16f, white, true))
-                    details.addView(
-                        text(actionTitle(input.action), 13f, blue)
-                            .also { it.setPadding(0, dp(4), 0, 0) }
-                    )
-                    row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
-
-                    val pencil = text("✎", 23f, blue, true).apply {
-                        gravity = android.view.Gravity.CENTER
-                        setPadding(dp(14), dp(4), dp(4), dp(4))
-                        contentDescription = getString(R.string.edit_input)
-                        isClickable = true
-                        isFocusable = true
-                        setOnClickListener {
-                            editingInputId =
-                                if (editingInputId == input.id) null else input.id
-                            renderInputs()
-                        }
-                    }
-                    row.addView(pencil, LinearLayout.LayoutParams(-2, dp(44)))
-                    card.addView(row, matchWrap())
-
-                    if (editingInputId == input.id) {
-                        card.addView(createInlineEditor(input), matchWrap())
-                    }
-
-                    groupBlock.addView(card, matchWrap().apply {
-                        topMargin = dp(6)
-                    })
-                }
-            }
-
-            inputContainer.addView(groupBlock, matchWrap().apply {
-                topMargin = dp(10)
-            })
-        }
     }
 
     private fun createInlineEditor(input: RoutineInput): View {

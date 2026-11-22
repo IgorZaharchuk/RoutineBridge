@@ -131,6 +131,7 @@ internal object SamsungRoutineDispatcher {
     private fun processRoutine(uuid: Long): Boolean {
         var confirmedAttempt = false
         var performedLaunch = false
+        var requestId = "not-started"
 
         try {
             val context = appContext
@@ -153,7 +154,7 @@ internal object SamsungRoutineDispatcher {
             } ?: return false
 
             val started = start.first
-            val requestId = start.second
+            requestId = start.second
 
             Log.i(
                 TAG,
