@@ -121,4 +121,59 @@
     <string name="diagnostics_input_confirm_message">Вход «%1$s» выполнит действие «%2$s» для сценария «%3$s». Состояние устройства может измениться.
 
 Request: %4$s</string>
+
+    <string name="diagnostics_test_open_session">Открытие сессии</string>
+    <string name="diagnostics_test_ping">Ping</string>
+    <string name="diagnostics_test_first_provider">Первый запрос Provider</string>
+    <string name="diagnostics_test_repeated_queries">Повторные запросы</string>
+    <string name="diagnostics_test_close_session">Закрытие сессии</string>
+    <string name="diagnostics_single_launch">Одиночный запуск</string>
+    <string name="diagnostics_sequence_launch">Последовательный запуск</string>
+    <string name="diagnostics_session_already_open">Сессия уже открыта. Сначала закрой её.</string>
+    <string name="diagnostics_binder_ready">Binder готов за %1$d мс</string>
+    <string name="diagnostics_expected_uid">Ожидался UID 0, получен %1$d</string>
+    <string name="diagnostics_binder_response">Ответ Binder получен. UID=%1$d</string>
+    <string name="diagnostics_repeated_query">Запрос %1$d: %2$d мс, строк=%3$d</string>
+    <string name="diagnostics_root_stopped">Root-процесс завершился. su/app_process больше не работает.</string>
+    <string name="diagnostics_root_not_stopped">ОШИБКА: root-процесс не завершился за 5 секунд. isAlive=%1$s. Сессия сохранена для повторной проверки.</string>
+    <string name="diagnostics_routines_loaded">Samsung Provider: загружено сценариев — %1$d</string>
+    <string name="diagnostics_routines_load_error">Ошибка загрузки сценариев: %1$s: %2$s</string>
+    <string name="diagnostics_inputs_loaded">RoutineBridge: загружено сохранённых входов — %1$d</string>
+    <string name="diagnostics_inputs_load_error">Ошибка чтения входов: %1$s: %2$s</string>
+    <string name="diagnostics_inputs_saved">RoutineBridge: входы сохранены, ярлыки обновлены (%1$d)</string>
+    <string name="diagnostics_shortcuts_update_unconfirmed">RoutineBridge: входы сохранены, но Android не подтвердил обновление ярлыков</string>
+    <string name="diagnostics_input_saved_title">Вход сохранён</string>
+    <string name="diagnostics_shortcuts_update_unconfirmed_message">Настройки записаны, но Android не подтвердил обновление ярлыков.</string>
+    <string name="diagnostics_input_save_error">RoutineBridge: ошибка сохранения или публикации ярлыков: %1$s: %2$s</string>
+    <string name="diagnostics_operation_error_title">Ошибка операции</string>
+    <string name="diagnostics_no_selected_routines">Не выбраны сценарии.</string>
+    <string name="diagnostics_duplicate_routines">Нельзя выбирать один сценарий несколько раз.</string>
+    <string name="diagnostics_dispatcher_header">DISPATCHER: общий SamsungRoutineDispatcher</string>
+    <string name="diagnostics_dispatcher_mode">MODE: последовательное выполнение, ENABLE</string>
+    <string name="diagnostics_dispatcher_selected">SELECTED: %1$s</string>
+    <string name="diagnostics_routine_disappeared">%1$s%2$d: сценарий исчез из Provider</string>
+    <string name="diagnostics_routine_disabled">%1$s%2$d: '%3$s' выключен или состояние неизвестно</string>
+    <string name="diagnostics_provider_state_unknown">Provider не сообщил is_running</string>
+    <string name="diagnostics_state_unknown_result">RESULT: тест остановлен — состояние сценария неизвестно</string>
+    <string name="diagnostics_routine_ready">%1$s%2$d: READY '%3$s', is_running=%4$s</string>
+    <string name="diagnostics_routine_enqueued">%1$s%2$d: ENQUEUED uuid=%3$s</string>
+    <string name="diagnostics_dispatcher_timeout">%1$s%2$d: диспетчер не завершил очередь за 15 секунд. Следующий сценарий не запускается.</string>
+    <string name="diagnostics_routine_disappeared_after">%1$s%2$d: сценарий исчез после запуска</string>
+    <string name="diagnostics_launch_not_confirmed">%1$s%2$d: запуск не подтверждён Provider; is_running=%3$s</string>
+    <string name="diagnostics_routine_result">%1$s%2$d: %3$s is_running=true</string>
+    <string name="diagnostics_all_routines_confirmed">RESULT: Provider подтвердил все выбранные сценарии</string>
+    <string name="diagnostics_query_time">Время: %1$d мс</string>
+    <string name="diagnostics_query_columns">Столбцы: %1$s</string>
+    <string name="diagnostics_query_rows">Строк получено: %1$d</string>
+    <string name="diagnostics_query_more_rows">Показаны первые 10 из %1$d строк.</string>
+    <string name="diagnostics_session_required">Сначала открой root-сессию.</string>
+    <string name="diagnostics_test_elapsed">%1$s — %2$d мс
+%3$s</string>
+    <string name="diagnostics_test_error">%1$s — ОШИБКА
+%2$s: %3$s</string>
+    <string name="diagnostics_logcat_exit_error">LOGCAT_UNAVAILABLE: logcat завершился с кодом %1$d
+%2$s</string>
+    <string name="diagnostics_logcat_empty">Для тега RoutineBridge записей нет.</string>
+    <string name="diagnostics_logcat_denied">LOGCAT_UNAVAILABLE: доступ запрещён: %1$s</string>
+    <string name="diagnostics_logcat_error">LOGCAT_UNAVAILABLE: %1$s: %2$s</string>
 </resources>

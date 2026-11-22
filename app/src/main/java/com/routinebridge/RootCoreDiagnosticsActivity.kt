@@ -81,54 +81,52 @@ class RootCoreDiagnosticsActivity : Activity() {
         val rootTests = collapsibleGroup(content, getString(R.string.diagnostics_root_group))
 
         addButton(rootTests, getString(R.string.diagnostics_test_1)) {
-            runTest("Открытие сессии") {
-                check(session == null) { "Сессия уже открыта. Сначала закрой её." }
+            runTest(getString(R.string.diagnostics_test_open_session)) {
+                check(session == null) { getString(R.string.diagnostics_session_already_open) }
                 val start = SystemClock.elapsedRealtime()
                 session = RootCore.open(this, 30_000L)
-                "Binder готов за ${SystemClock.elapsedRealtime() - start} мс"
+                getString(R.string.diagnostics_binder_ready, SystemClock.elapsedRealtime() - start)
             }
         }
 
         addButton(rootTests, getString(R.string.diagnostics_test_2)) {
-            runTest("Ping") {
+            runTest(getString(R.string.diagnostics_test_ping)) {
                 val uid = requireSession().ping()
-                check(uid == 0) { "Ожидался UID 0, получен $uid" }
-                "Ответ Binder получен. UID=$uid"
+                check(uid == 0) { getString(R.string.diagnostics_expected_uid, uid) }
+                getString(R.string.diagnostics_binder_response, uid)
             }
         }
 
         addButton(rootTests, getString(R.string.diagnostics_test_3)) {
-            runTest("Первый запрос Provider") {
+            runTest(getString(R.string.diagnostics_test_first_provider)) {
                 queryReport(requireSession())
             }
         }
 
         addButton(rootTests, getString(R.string.diagnostics_test_4)) {
-            runTest("Повторные запросы") {
+            runTest(getString(R.string.diagnostics_test_repeated_queries)) {
                 val current = requireSession()
                 val results = (1..5).map { index ->
                     val start = SystemClock.elapsedRealtime()
                     val result = current.queryProvider(providerUri, null)
                     val elapsed = SystemClock.elapsedRealtime() - start
                     val rows = result.getParcelableArrayList<Bundle>("rows")
-                    "Запрос $index: ${elapsed} мс, строк=${rows?.size ?: 0}"
+                    getString(R.string.diagnostics_repeated_query, index, elapsed, rows?.size ?: 0)
                 }
                 results.joinToString("\n")
             }
         }
 
         addButton(rootTests, getString(R.string.diagnostics_test_5)) {
-            runTest("Закрытие сессии") {
+            runTest(getString(R.string.diagnostics_test_close_session)) {
                 val current = requireSession()
                 current.close()
                 val stopped = current.awaitTermination(5_000L)
                 if (stopped) {
                     session = null
-                    "Root-процесс завершился. su/app_process больше не работает."
+                    getString(R.string.diagnostics_root_stopped)
                 } else {
-                    "ОШИБКА: root-процесс не завершился за 5 секунд. " +
-                        "isAlive=${current.isRootProcessAlive()}. " +
-                        "Сессия сохранена для повторной проверки."
+                    getString(R.string.diagnostics_root_not_stopped, current.isRootProcessAlive())
                 }
             }
         }
@@ -183,7 +181,7 @@ class RootCoreDiagnosticsActivity : Activity() {
                     )
                     .setNegativeButton(getString(R.string.cancel), null)
                     .setPositiveButton(getString(R.string.diagnostics_launch)) { _, _ ->
-                        runTest("Одиночный запуск") {
+                        runTest(getString(R.string.diagnostics_single_launch)) {
                             runDispatcherSequence(selected, "TEST")
                         }
                     }
@@ -203,7 +201,7 @@ class RootCoreDiagnosticsActivity : Activity() {
                     )
                     .setNegativeButton(getString(R.string.cancel), null)
                     .setPositiveButton(getString(R.string.diagnostics_launch)) { _, _ ->
-                        runTest("Последовательный запуск") {
+                        runTest(getString(R.string.diagnostics_sequence_launch)) {
                             runDispatcherSequence(selected, "T")
                         }
                     }
@@ -296,12 +294,11 @@ class RootCoreDiagnosticsActivity : Activity() {
                     if (::inputContainer.isInitialized) {
                         renderDiagnosticInputs()
                     }
-                    log("Samsung Provider: загружено сценариев — ${loaded.size}")
+                    log(getString(R.string.diagnostics_routines_loaded, loaded.size))
                 }
             } catch (error: Throwable) {
                 log(
-                    "Ошибка загрузки сценариев: " +
-                        "${error.javaClass.simpleName}: ${error.message}"
+                    getString(R.string.diagnostics_routines_load_error, error.javaClass.simpleName, error.message ?: error)
                 )
             }
         }
@@ -382,12 +379,11 @@ class RootCoreDiagnosticsActivity : Activity() {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     diagnosticInputs = loaded
                     renderDiagnosticInputs()
-                    log("RoutineBridge: загружено сохранённых входов — ${loaded.size}")
+                    log(getString(R.string.diagnostics_inputs_loaded, loaded.size))
                 }
             } catch (error: Throwable) {
                 log(
-                    "Ошибка чтения входов: " +
-                        "${error.javaClass.simpleName}: ${error.message}"
+                    getString(R.string.diagnostics_inputs_load_error, error.javaClass.simpleName, error.message ?: error)
                 )
             }
         }
@@ -486,22 +482,21 @@ class RootCoreDiagnosticsActivity : Activity() {
             )
 
             if (shortcutsUpdated) {
-                log("RoutineBridge: входы сохранены, ярлыки обновлены (${updated.size})")
+                log(getString(R.string.diagnostics_inputs_saved, updated.size))
             } else {
-                log("RoutineBridge: входы сохранены, но Android не подтвердил обновление ярлыков")
+                log(getString(R.string.diagnostics_shortcuts_update_unconfirmed))
                 AlertDialog.Builder(this)
-                    .setTitle("Вход сохранён")
-                    .setMessage("Настройки записаны, но Android не подтвердил обновление ярлыков.")
+                    .setTitle(getString(R.string.diagnostics_input_saved_title))
+                    .setMessage(getString(R.string.diagnostics_shortcuts_update_unconfirmed_message))
                     .setPositiveButton(getString(R.string.close), null)
                     .show()
             }
         } catch (error: Throwable) {
             log(
-                "RoutineBridge: ошибка сохранения или публикации ярлыков: " +
-                    "${error.javaClass.simpleName}: ${error.message}"
+                getString(R.string.diagnostics_input_save_error, error.javaClass.simpleName, error.message ?: error)
             )
             AlertDialog.Builder(this)
-                .setTitle("Ошибка операции")
+                .setTitle(getString(R.string.diagnostics_operation_error_title))
                 .setMessage(error.message ?: error.javaClass.simpleName)
                 .setPositiveButton(getString(R.string.close), null)
                 .show()
@@ -516,7 +511,11 @@ class RootCoreDiagnosticsActivity : Activity() {
                 getString(
                     R.string.diagnostics_input_confirm_message,
                     input.label,
-                    input.action,
+                    when (input.action) {
+                        RoutineInputAction.ENABLE -> getString(R.string.action_enable)
+                        RoutineInputAction.DISABLE -> getString(R.string.action_disable)
+                        RoutineInputAction.TOGGLE -> getString(R.string.action_toggle)
+                    },
                     input.routineName,
                     requestId
                 )
@@ -551,36 +550,35 @@ class RootCoreDiagnosticsActivity : Activity() {
         val report = mutableListOf<String>()
         val repository = ManualRoutineRepository(applicationContext)
 
-        check(selected.isNotEmpty()) { "Не выбраны сценарии." }
+        check(selected.isNotEmpty()) { getString(R.string.diagnostics_no_selected_routines) }
         check(selected.map { it.uuid }.distinct().size == selected.size) {
-            "Нельзя выбирать один сценарий несколько раз."
+            getString(R.string.diagnostics_duplicate_routines)
         }
 
-        report.add("DISPATCHER: общий SamsungRoutineDispatcher")
-        report.add("MODE: последовательное выполнение, ENABLE")
-        report.add("SELECTED: ${selected.joinToString { it.name }}")
+        report.add(getString(R.string.diagnostics_dispatcher_header))
+        report.add(getString(R.string.diagnostics_dispatcher_mode))
+        report.add(getString(R.string.diagnostics_dispatcher_selected, selected.joinToString { it.name }))
 
         for ((index, chosen) in selected.withIndex()) {
             val current = repository.load().firstOrNull {
                 it.uuid == chosen.uuid
-            } ?: error("${label}${index + 1}: сценарий исчез из Provider")
+            } ?: error(getString(R.string.diagnostics_routine_disappeared, label, index + 1))
 
             check(current.isEnabled == true) {
-                "${label}${index + 1}: '${current.name}' выключен или состояние неизвестно"
+                getString(R.string.diagnostics_routine_disabled, label, index + 1, current.name)
             }
             val initialRunning = current.isRunning
             if (initialRunning == null) {
                 report.add(
                     "${label}${index + 1}: UNKNOWN '${current.name}', " +
-                        "Provider не сообщил is_running"
+                        getString(R.string.diagnostics_provider_state_unknown)
                 )
-                report.add("RESULT: тест остановлен — состояние сценария неизвестно")
+                report.add(getString(R.string.diagnostics_state_unknown_result))
                 return report.joinToString("\n")
             }
 
             report.add(
-                "${label}${index + 1}: READY '${current.name}', " +
-                    "is_running=$initialRunning"
+                getString(R.string.diagnostics_routine_ready, label, index + 1, current.name, initialRunning)
             )
 
             val latch = CountDownLatch(1)
@@ -599,29 +597,27 @@ class RootCoreDiagnosticsActivity : Activity() {
                 onQueueDrained = { latch.countDown() }
             )
 
-            report.add("${label}${index + 1}: ENQUEUED uuid=${current.uuid}")
+            report.add(getString(R.string.diagnostics_routine_enqueued, label, index + 1, current.uuid))
 
             check(latch.await(15, TimeUnit.SECONDS)) {
-                "${label}${index + 1}: диспетчер не завершил очередь за 15 секунд. " +
-                    "Следующий сценарий не запускается."
+                getString(R.string.diagnostics_dispatcher_timeout, label, index + 1)
             }
 
             val confirmed = repository.load().firstOrNull {
                 it.uuid == current.uuid
-            } ?: error("${label}${index + 1}: сценарий исчез после запуска")
+            } ?: error(getString(R.string.diagnostics_routine_disappeared_after, label, index + 1))
 
             check(confirmed.isRunning == true) {
-                "${label}${index + 1}: запуск не подтверждён Provider; " +
-                    "is_running=${confirmed.isRunning}"
+                getString(R.string.diagnostics_launch_not_confirmed, label, index + 1, confirmed.isRunning)
             }
 
             val resultStatus = if (initialRunning) "SKIPPED" else "CONFIRMED"
             report.add(
-                "${label}${index + 1}: $resultStatus is_running=true"
+                getString(R.string.diagnostics_routine_result, label, index + 1, resultStatus)
             )
         }
 
-        report.add("RESULT: все выбранные сценарии подтверждены Provider")
+        report.add(getString(R.string.diagnostics_all_routines_confirmed))
         return report.joinToString("\n")
     }
 
@@ -635,9 +631,9 @@ class RootCoreDiagnosticsActivity : Activity() {
         val rows = result.getParcelableArrayList<Bundle>("rows") ?: arrayListOf()
 
         val lines = mutableListOf(
-            "Время: ${elapsed} мс",
-            "Столбцы: ${columns.joinToString()}",
-            "Строк получено: ${rows.size}"
+            getString(R.string.diagnostics_query_time, elapsed),
+            getString(R.string.diagnostics_query_columns, columns.joinToString()),
+            getString(R.string.diagnostics_query_rows, rows.size)
         )
 
         rows.take(10).forEachIndexed { index, row ->
@@ -648,14 +644,14 @@ class RootCoreDiagnosticsActivity : Activity() {
         }
 
         if (rows.size > 10) {
-            lines.add("Показаны первые 10 из ${rows.size} строк.")
+            lines.add(getString(R.string.diagnostics_query_more_rows, rows.size))
         }
 
         return lines.joinToString("\n")
     }
 
     private fun requireSession(): RootCoreSession =
-        session ?: throw IllegalStateException("Сначала открой root-сессию.")
+        session ?: throw IllegalStateException(getString(R.string.diagnostics_session_required))
 
     private fun runTest(label: String, action: () -> String) {
         worker.execute {
@@ -663,12 +659,11 @@ class RootCoreDiagnosticsActivity : Activity() {
             try {
                 val result = action()
                 log(
-                    "$label — ${SystemClock.elapsedRealtime() - start} мс\n$result"
+                    getString(R.string.diagnostics_test_elapsed, label, SystemClock.elapsedRealtime() - start, result)
                 )
             } catch (error: Throwable) {
                 log(
-                    "$label — ОШИБКА\n${error.javaClass.simpleName}: " +
-                        "${error.message ?: error}"
+                    getString(R.string.diagnostics_test_error, label, error.javaClass.simpleName, error.message ?: error)
                 )
             }
         }
@@ -757,16 +752,16 @@ class RootCoreDiagnosticsActivity : Activity() {
             val captured = process.inputStream.bufferedReader().use { it.readText() }
             val finished = process.waitFor()
             if (finished != 0) {
-                "LOGCAT_UNAVAILABLE: logcat завершился с кодом $finished\n$captured"
+                getString(R.string.diagnostics_logcat_exit_error, finished, captured)
             } else if (captured.isBlank()) {
-                "Для тега RoutineBridge записей нет."
+                getString(R.string.diagnostics_logcat_empty)
             } else {
                 captured
             }
         } catch (error: SecurityException) {
-            "LOGCAT_UNAVAILABLE: доступ запрещён: ${error.message}"
+            getString(R.string.diagnostics_logcat_denied, error.message ?: error)
         } catch (error: Throwable) {
-            "LOGCAT_UNAVAILABLE: ${error.javaClass.simpleName}: ${error.message}"
+            getString(R.string.diagnostics_logcat_error, error.javaClass.simpleName, error.message ?: error)
         }
     }
 
