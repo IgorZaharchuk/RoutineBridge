@@ -232,7 +232,7 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        content.addView(text("Журнал RoutineBridge", 16f, primary))
+        content.addView(text("Журнал RoutineBridge", 16f, white))
         journal = text("Журнал ещё не загружен.", 12f, secondary).apply {
             setPadding(dp(12), dp(12), dp(12), dp(12))
             setBackgroundColor(Color.rgb(30, 30, 30))
