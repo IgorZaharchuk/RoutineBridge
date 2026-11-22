@@ -81,4 +81,42 @@
     <string name="routine_service_channel_description">Execution of Samsung routine commands</string>
     <string name="routine_service_notification_title">RoutineBridge</string>
     <string name="routine_service_notification_text">Executing Samsung routines</string>
+    <string name="diagnostics_title">Root Core diagnostics</string>
+    <string name="diagnostics_intro">Operational features and diagnostics use Root Core. Operations run in a single root session.</string>
+    <string name="diagnostics_root_group">Root Core — tests 1–5</string>
+    <string name="diagnostics_test_1">1. Open root session</string>
+    <string name="diagnostics_test_2">2. Ping and UID check</string>
+    <string name="diagnostics_test_3">3. First Samsung Provider request</string>
+    <string name="diagnostics_test_4">4. Five repeated requests</string>
+    <string name="diagnostics_test_5">5. Close session and check process</string>
+    <string name="diagnostics_samsung_group">Samsung Dispatcher — tests 6–7</string>
+    <string name="diagnostics_samsung_subtitle">Samsung routine launch test</string>
+    <string name="diagnostics_samsung_description">Select routines for direct Dispatcher tests</string>
+    <string name="diagnostics_inputs_group">RoutineBridge inputs</string>
+    <string name="diagnostics_inputs_subtitle">RoutineBridge input test</string>
+    <string name="diagnostics_inputs_description">Tapping an existing input runs the normal chain: ShortcutRunActivity → Service → Dispatcher → Samsung Provider. Input settings are not changed.</string>
+    <string name="diagnostics_test_6">6. Run the first selected routine</string>
+    <string name="diagnostics_test_7">7. Run three routines sequentially</string>
+    <string name="diagnostics_select_one">Select a routine in the first list.</string>
+    <string name="diagnostics_select_three">Select three different routines.</string>
+    <string name="diagnostics_launch_title">Launch Samsung routine?</string>
+    <string name="diagnostics_launch_message">Routine “%1$s” will be enabled through the shared dispatcher.</string>
+    <string name="diagnostics_sequence_title">Confirm sequential launch?</string>
+    <string name="diagnostics_sequence_message">The three selected routines will be enabled one by one. Each next routine starts only after the previous one is confirmed. Connected devices may change their state.</string>
+    <string name="diagnostics_launch">Launch</string>
+    <string name="diagnostics_selected_count">Selected: %1$d of 3. Tap cards to change the selection.</string>
+    <string name="diagnostics_max_selected">You can select no more than three routines.</string>
+    <string name="diagnostics_no_routines">No routines found. Refresh the list.</string>
+    <string name="diagnostics_no_inputs">No saved inputs yet.</string>
+    <string name="diagnostics_results_empty">Test results will appear here.</string>
+    <string name="diagnostics_copy">Copy tests and RoutineBridge journal</string>
+    <string name="diagnostics_copied">Results and journal copied</string>
+    <string name="diagnostics_clear">Clear results and journal</string>
+    <string name="diagnostics_journal_title">RoutineBridge journal</string>
+    <string name="diagnostics_journal_unloaded">Journal has not been loaded yet.</string>
+    <string name="diagnostics_journal_cleared">Journal cleared.</string>
+    <string name="diagnostics_input_confirm_title">Run input?</string>
+    <string name="diagnostics_input_confirm_message">Input “%1$s” will perform action “%2$s” for routine “%3$s”. Device state may change.
+
+Request: %4$s</string>
 </resources>

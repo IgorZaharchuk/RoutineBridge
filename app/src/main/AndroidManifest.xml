@@ -27,7 +27,7 @@
         <activity
             android:name=".RootCoreDiagnosticsActivity"
             android:exported="false"
-            android:label="Root Core diagnostics"
+            android:label="@string/diagnostics_title"
             android:theme="@style/AppTheme" />
 
         <activity

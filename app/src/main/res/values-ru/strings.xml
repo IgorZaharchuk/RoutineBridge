@@ -83,4 +83,42 @@
     <string name="routine_service_channel_description">Выполнение команд сценариев Samsung</string>
     <string name="routine_service_notification_title">RoutineBridge</string>
     <string name="routine_service_notification_text">Выполняются сценарии Samsung</string>
+    <string name="diagnostics_title">Диагностика Root Core</string>
+    <string name="diagnostics_intro">Рабочие операции и диагностика используют Root Core. Операции выполняются в одной root-сессии.</string>
+    <string name="diagnostics_root_group">Root Core — тесты 1–5</string>
+    <string name="diagnostics_test_1">1. Открыть root-сессию</string>
+    <string name="diagnostics_test_2">2. Ping и проверка UID</string>
+    <string name="diagnostics_test_3">3. Первый запрос Samsung Provider</string>
+    <string name="diagnostics_test_4">4. Пять повторных запросов</string>
+    <string name="diagnostics_test_5">5. Закрыть сессию и проверить процесс</string>
+    <string name="diagnostics_samsung_group">Samsung Dispatcher — тесты 6–7</string>
+    <string name="diagnostics_samsung_subtitle">Проверка запуска Samsung-сценариев</string>
+    <string name="diagnostics_samsung_description">Выбери сценарии для прямых проверок Dispatcher</string>
+    <string name="diagnostics_inputs_group">Входы RoutineBridge</string>
+    <string name="diagnostics_inputs_subtitle">Проверка входов RoutineBridge</string>
+    <string name="diagnostics_inputs_description">Нажатие на существующий вход запускает штатную цепочку ShortcutRunActivity → Service → Dispatcher → Samsung Provider. Настройки входов не изменяются.</string>
+    <string name="diagnostics_test_6">6. Запустить первый выбранный сценарий</string>
+    <string name="diagnostics_test_7">7. Последовательно запустить три сценария</string>
+    <string name="diagnostics_select_one">Выбери сценарий в первом списке.</string>
+    <string name="diagnostics_select_three">Выбери три разных сценария.</string>
+    <string name="diagnostics_launch_title">Запустить Samsung-сценарий?</string>
+    <string name="diagnostics_launch_message">Сценарий «%1$s» будет включён через общий диспетчер.</string>
+    <string name="diagnostics_sequence_title">Подтвердить последовательный запуск?</string>
+    <string name="diagnostics_sequence_message">Три выбранных сценария будут включены по очереди. Каждый следующий запустится только после подтверждения предыдущего. Связанные устройства могут изменить состояние.</string>
+    <string name="diagnostics_launch">Запустить</string>
+    <string name="diagnostics_selected_count">Выбрано: %1$d из 3. Нажимай на карточки, чтобы изменить выбор.</string>
+    <string name="diagnostics_max_selected">Можно выбрать не более трёх сценариев</string>
+    <string name="diagnostics_no_routines">Сценарии не найдены. Обнови список.</string>
+    <string name="diagnostics_no_inputs">Сохранённых входов пока нет.</string>
+    <string name="diagnostics_results_empty">Результаты тестов появятся здесь.</string>
+    <string name="diagnostics_copy">Скопировать тесты и журнал RoutineBridge</string>
+    <string name="diagnostics_copied">Результаты и журнал скопированы</string>
+    <string name="diagnostics_clear">Очистить результаты и журнал</string>
+    <string name="diagnostics_journal_title">Журнал RoutineBridge</string>
+    <string name="diagnostics_journal_unloaded">Журнал ещё не загружен.</string>
+    <string name="diagnostics_journal_cleared">Журнал очищен.</string>
+    <string name="diagnostics_input_confirm_title">Выполнить вход?</string>
+    <string name="diagnostics_input_confirm_message">Вход «%1$s» выполнит действие «%2$s» для сценария «%3$s». Состояние устройства может измениться.
+
+Request: %4$s</string>
 </resources>

@@ -29,6 +29,10 @@ import java.util.UUID
 
 class RootCoreDiagnosticsActivity : Activity() {
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLocale.wrap(newBase))
+    }
+
     private val worker = Executors.newSingleThreadExecutor()
     private var session: RootCoreSession? = null
     private lateinit var output: TextView
@@ -60,16 +64,23 @@ class RootCoreDiagnosticsActivity : Activity() {
             setBackgroundColor(bg)
         }
 
-        content.addView(text("Root Core — диагностика", 21f, white))
+        content.addView(text(getString(R.string.diagnostics_title), 21f, white))
         content.addView(text(
-            "Рабочие операции и диагностика используют Root Core. " +
-                "Операции выполняются в одной root-сессии.",
+            getString(R.string.diagnostics_intro),
             14f, secondary
         ))
 
-        val rootTests = collapsibleGroup(content, "Root Core — тесты 1–5")
+        addButton(content, getString(R.string.language_switch)) {
+            getSharedPreferences("settings", MODE_PRIVATE)
+                .edit()
+                .putBoolean("english", !AppLocale.isEnglish(this))
+                .apply()
+            recreate()
+        }
 
-        addButton(rootTests, "1. Открыть root-сессию") {
+        val rootTests = collapsibleGroup(content, getString(R.string.diagnostics_root_group))
+
+        addButton(rootTests, getString(R.string.diagnostics_test_1)) {
             runTest("Открытие сессии") {
                 check(session == null) { "Сессия уже открыта. Сначала закрой её." }
                 val start = SystemClock.elapsedRealtime()
@@ -78,7 +89,7 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        addButton(rootTests, "2. Ping и проверка UID") {
+        addButton(rootTests, getString(R.string.diagnostics_test_2)) {
             runTest("Ping") {
                 val uid = requireSession().ping()
                 check(uid == 0) { "Ожидался UID 0, получен $uid" }
@@ -86,13 +97,13 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        addButton(rootTests, "3. Первый запрос Samsung Provider") {
+        addButton(rootTests, getString(R.string.diagnostics_test_3)) {
             runTest("Первый запрос Provider") {
                 queryReport(requireSession())
             }
         }
 
-        addButton(rootTests, "4. Пять повторных запросов") {
+        addButton(rootTests, getString(R.string.diagnostics_test_4)) {
             runTest("Повторные запросы") {
                 val current = requireSession()
                 val results = (1..5).map { index ->
@@ -106,7 +117,7 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        addButton(rootTests, "5. Закрыть сессию и проверить процесс") {
+        addButton(rootTests, getString(R.string.diagnostics_test_5)) {
             runTest("Закрытие сессии") {
                 val current = requireSession()
                 current.close()
@@ -122,15 +133,15 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        val samsungTests = collapsibleGroup(content, "Samsung Dispatcher — тесты 6–7")
+        val samsungTests = collapsibleGroup(content, getString(R.string.diagnostics_samsung_group))
 
         samsungTests.addView(text(
-            "Проверка запуска Samsung-сценариев",
+            getString(R.string.diagnostics_samsung_subtitle),
             17f, white
         ).apply { setPadding(0, dp(18), 0, dp(6)) })
 
         samsungTests.addView(text(
-            "Выбери сценарии для прямых проверок Dispatcher",
+            getString(R.string.diagnostics_samsung_description),
             14f, secondary
         ))
 
@@ -139,21 +150,19 @@ class RootCoreDiagnosticsActivity : Activity() {
         }
         samsungTests.addView(routineSelection, LinearLayout.LayoutParams(-1, -2))
 
-        addButton(samsungTests, "Обновить список сценариев") {
+        addButton(samsungTests, getString(R.string.refresh_routines)) {
             loadRoutines()
         }
 
-        val inputTests = collapsibleGroup(content, "Входы RoutineBridge")
+        val inputTests = collapsibleGroup(content, getString(R.string.diagnostics_inputs_group))
 
         inputTests.addView(text(
-            "Проверка входов RoutineBridge",
+            getString(R.string.diagnostics_inputs_subtitle),
             17f, white
         ).apply { setPadding(0, dp(22), 0, dp(6)) })
 
         inputTests.addView(text(
-            "Нажатие на существующий вход запускает штатную цепочку " +
-                "ShortcutRunActivity → Service → Dispatcher → Samsung Provider. " +
-                "Настройки входов не изменяются.",
+            getString(R.string.diagnostics_inputs_description),
             13f, secondary
         ))
 
@@ -162,18 +171,18 @@ class RootCoreDiagnosticsActivity : Activity() {
         }
         inputTests.addView(inputContainer, LinearLayout.LayoutParams(-1, -2))
 
-        addButton(samsungTests, "6. Запустить первый выбранный сценарий", blue) {
+        addButton(samsungTests, getString(R.string.diagnostics_test_6), blue) {
             val selected = selectedRoutines(1)
             if (selected == null) {
-                log("Выбери сценарий в первом списке.")
+                log(getString(R.string.diagnostics_select_one))
             } else {
                 AlertDialog.Builder(this)
-                    .setTitle("Запустить Samsung-сценарий?")
+                    .setTitle(getString(R.string.diagnostics_launch_title))
                     .setMessage(
-                        "Сценарий «${selected.first().name}» будет включён через общий диспетчер."
+                        getString(R.string.diagnostics_launch_message, selected.first().name)
                     )
-                    .setNegativeButton("Отмена", null)
-                    .setPositiveButton("Запустить") { _, _ ->
+                    .setNegativeButton(getString(R.string.cancel), null)
+                    .setPositiveButton(getString(R.string.diagnostics_launch)) { _, _ ->
                         runTest("Одиночный запуск") {
                             runDispatcherSequence(selected, "TEST")
                         }
@@ -182,20 +191,18 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        addButton(samsungTests, "7. Последовательно запустить три сценария", blue) {
+        addButton(samsungTests, getString(R.string.diagnostics_test_7), blue) {
             val selected = selectedRoutines(3)
             if (selected == null) {
-                log("Выбери три разных сценария.")
+                log(getString(R.string.diagnostics_select_three))
             } else {
                 AlertDialog.Builder(this)
-                    .setTitle("Подтвердить последовательный запуск?")
+                    .setTitle(getString(R.string.diagnostics_sequence_title))
                     .setMessage(
-                        "Три выбранных сценария будут включены по очереди. " +
-                            "Каждый следующий запустится только после подтверждения предыдущего. " +
-                            "Связанные устройства могут изменить состояние."
+                        getString(R.string.diagnostics_sequence_message)
                     )
-                    .setNegativeButton("Отмена", null)
-                    .setPositiveButton("Запустить") { _, _ ->
+                    .setNegativeButton(getString(R.string.cancel), null)
+                    .setPositiveButton(getString(R.string.diagnostics_launch)) { _, _ ->
                         runTest("Последовательный запуск") {
                             runDispatcherSequence(selected, "T")
                         }
@@ -204,7 +211,7 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        output = text("Результаты тестов появятся здесь.", 13f, secondary).apply {
+        output = text(getString(R.string.diagnostics_results_empty), 13f, secondary).apply {
             setPadding(dp(12), dp(12), dp(12), dp(12))
             setBackgroundColor(Color.rgb(30, 30, 30))
             setTextIsSelectable(true)
@@ -212,7 +219,7 @@ class RootCoreDiagnosticsActivity : Activity() {
 
         content.addView(output)
 
-        addButton(content, "Скопировать тесты и журнал RoutineBridge") {
+        addButton(content, getString(R.string.diagnostics_copy)) {
             val testReport = output.text.toString()
             worker.execute {
                 val journalText = captureRoutineBridgeLogcat()
@@ -231,20 +238,20 @@ class RootCoreDiagnosticsActivity : Activity() {
                     )
                     Toast.makeText(
                         this,
-                        "Результаты и журнал скопированы",
+                        getString(R.string.diagnostics_copied),
                         Toast.LENGTH_SHORT
                     ).show()
                 }
             }
         }
 
-        addButton(content, "Очистить результаты и журнал") {
-            output.text = "Результаты тестов появятся здесь."
-            journal.text = "Журнал очищен."
+        addButton(content, getString(R.string.diagnostics_clear)) {
+            output.text = getString(R.string.diagnostics_results_empty)
+            journal.text = getString(R.string.diagnostics_journal_cleared)
         }
 
-        content.addView(text("Журнал RoutineBridge", 16f, white))
-        journal = text("Журнал ещё не загружен.", 12f, secondary).apply {
+        content.addView(text(getString(R.string.diagnostics_journal_title), 16f, white))
+        journal = text(getString(R.string.diagnostics_journal_unloaded), 12f, secondary).apply {
             setPadding(dp(12), dp(12), dp(12), dp(12))
             setBackgroundColor(Color.rgb(30, 30, 30))
             setTextIsSelectable(true)
@@ -306,7 +313,7 @@ class RootCoreDiagnosticsActivity : Activity() {
 
         val selected = selectedRoutineUuids.size
         routineSelection.addView(text(
-            "Выбрано: $selected из 3. Нажимай на карточки, чтобы изменить выбор.",
+            getString(R.string.diagnostics_selected_count, selected),
             12f, secondary
         ))
 
@@ -330,7 +337,7 @@ class RootCoreDiagnosticsActivity : Activity() {
                     } else {
                         Toast.makeText(
                             this@RootCoreDiagnosticsActivity,
-                            "Можно выбрать не более трёх сценариев",
+                            getString(R.string.diagnostics_max_selected),
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -351,7 +358,7 @@ class RootCoreDiagnosticsActivity : Activity() {
 
         if (availableRoutines.isEmpty()) {
             routineSelection.addView(text(
-                "Сценарии не найдены. Обнови список.",
+                getString(R.string.diagnostics_no_routines),
                 13f, secondary
             ))
         }
@@ -395,9 +402,9 @@ class RootCoreDiagnosticsActivity : Activity() {
             routines = availableRoutines,
             collapsedGroups = collapsedDiagnosticGroups,
             showInputCount = false,
-            emptyText = "Сохранённых входов пока нет.",
-            expandAllText = "Развернуть все группы",
-            collapseAllText = "Свернуть все группы",
+            emptyText = getString(R.string.diagnostics_no_inputs),
+            expandAllText = getString(R.string.expand_all),
+            collapseAllText = getString(R.string.collapse_all),
             actionTitle = { action ->
                 when (action) {
                     RoutineInputAction.ENABLE -> getString(R.string.action_enable)
@@ -504,14 +511,18 @@ class RootCoreDiagnosticsActivity : Activity() {
     private fun confirmDiagnosticInput(input: RoutineInput) {
         val requestId = UUID.randomUUID().toString()
         AlertDialog.Builder(this)
-            .setTitle("Выполнить вход?")
+            .setTitle(getString(R.string.diagnostics_input_confirm_title))
             .setMessage(
-                "Вход «${input.label}» выполнит действие " +
-                    "«${input.action}» для сценария «${input.routineName}». " +
-                    "Состояние устройства может измениться.\n\nRequest: $requestId"
+                getString(
+                    R.string.diagnostics_input_confirm_message,
+                    input.label,
+                    input.action,
+                    input.routineName,
+                    requestId
+                )
             )
-            .setNegativeButton("Отмена", null)
-            .setPositiveButton("Запустить") { _, _ ->
+            .setNegativeButton(getString(R.string.cancel), null)
+            .setPositiveButton(getString(R.string.diagnostics_launch)) { _, _ ->
                 log("INPUT_TEST_START request=$requestId inputId=${input.id}")
                 val launch = Intent(
                     this,
