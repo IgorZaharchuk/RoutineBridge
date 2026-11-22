@@ -22,6 +22,7 @@ internal object SamsungRoutineDispatcher {
     }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val drainCallbacks = mutableListOf<() -> Unit>()
+    private val pendingRequestIds = mutableMapOf<Long, String>()
 
     @Volatile
     private var appContext: Context? = null
@@ -59,10 +60,23 @@ internal object SamsungRoutineDispatcher {
             appContext = context.applicationContext
             drainCallbacks.add(onQueueDrained)
 
+            val wasAlreadyInFlight =
+                queue.inFlightSnapshot()?.routineUuid == input.routineUuid
+
             queue.enqueue(
                 input.routineUuid,
                 BooleanStateTransform.from(input.action)
             )
+
+            val isPending = queue.pendingSnapshot().any {
+                it.routineUuid == input.routineUuid
+            }
+
+            if (!wasAlreadyInFlight && isPending) {
+                pendingRequestIds.putIfAbsent(input.routineUuid, requestId)
+            } else if (!wasAlreadyInFlight) {
+                pendingRequestIds.remove(input.routineUuid)
+            }
 
             Log.i(
                 TAG,
@@ -107,16 +121,14 @@ internal object SamsungRoutineDispatcher {
                 continue
             }
 
-            val requestId = UUID.randomUUID().toString().take(8)
-
             // A true result means a confirmed operation required correction,
             // but that correction failed. Keep its target pending and wait
             // for a genuinely new event before resuming the queue.
-            if (processRoutine(uuid, requestId)) return
+            if (processRoutine(uuid)) return
         }
     }
 
-    private fun processRoutine(uuid: Long, requestId: String): Boolean {
+    private fun processRoutine(uuid: Long): Boolean {
         var confirmedAttempt = false
         var performedLaunch = false
 
@@ -126,9 +138,22 @@ internal object SamsungRoutineDispatcher {
             val repository = ManualRoutineRepository(context)
             val executor = RoutineActionExecutor(context, repository)
 
-            // The executor reads the authoritative state inside the same
-            // RootCore session that performs the physical launch.
-            val started = queue.beginNext(uuid) ?: return false
+            // Atomically move the pending command to in-flight and take
+            // the request ID belonging to that exact pending command.
+            val start = synchronized(schedulingLock) {
+                val command = queue.beginNext(uuid)
+                if (command == null) {
+                    null
+                } else {
+                    command to (
+                        pendingRequestIds.remove(uuid)
+                            ?: UUID.randomUUID().toString().take(8)
+                    )
+                }
+            } ?: return false
+
+            val started = start.first
+            val requestId = start.second
 
             Log.i(
                 TAG,

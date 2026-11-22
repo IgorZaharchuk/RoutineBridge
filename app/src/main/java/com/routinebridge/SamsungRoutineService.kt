@@ -71,6 +71,19 @@ class SamsungRoutineService : Service() {
             return START_NOT_STICKY
         }
 
+        Log.i(
+
+            TAG,
+
+            "SERVICE_COMMAND_RECEIVED request=${input.second} " +
+
+                "inputId=${input.first.id} uuid=${input.first.routineUuid} " +
+
+                "action=${input.first.action}"
+
+        )
+
+
         try {
             SamsungRoutineDispatcher.enqueue(
                 applicationContext,

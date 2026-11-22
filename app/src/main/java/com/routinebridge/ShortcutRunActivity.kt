@@ -16,7 +16,8 @@ class ShortcutRunActivity : Activity() {
         super.onCreate(savedInstanceState)
         Log.i(
             LOG_TAG,
-            "SHORTCUT_ACTIVITY_CREATE action=${intent?.action} " +
+            "SHORTCUT_ACTIVITY_CREATE request=${intent?.getStringExtra(EXTRA_REQUEST_ID)} " +
+                "action=${intent?.action} " +
                 "inputId=${intent?.getStringExtra(MainActivity.EXTRA_INPUT_ID)} " +
                 "component=${intent?.component?.flattenToShortString()}"
         )
@@ -25,7 +26,8 @@ class ShortcutRunActivity : Activity() {
 
     private fun openMainActivityWithError(message: String) {
         val mainIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(MainActivity.EXTRA_SHORTCUT_ERROR, message)
         }
         startActivity(mainIntent)
@@ -39,27 +41,43 @@ class ShortcutRunActivity : Activity() {
             return
         }
 
+        val requestId = intent.getStringExtra(EXTRA_REQUEST_ID)
+            ?.takeIf { it.isNotBlank() }
+            ?: UUID.randomUUID().toString().take(8)
+
         val id = intent.getStringExtra(MainActivity.EXTRA_INPUT_ID)
         if (id == null) {
+            Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR request=$requestId input_id_missing")
             openMainActivityWithError(getString(R.string.shortcut_id_missing))
             return
         }
 
+        Log.i(LOG_TAG, "SHORTCUT_INPUT_LOAD_START request=$requestId inputId=$id")
+
         val input = try {
             RoutineInputStore(this).load().firstOrNull { it.id == id }
         } catch (error: Exception) {
-            Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR settings_load_failed", error)
+            Log.e(
+                LOG_TAG,
+                "SHORTCUT_RUN_ERROR request=$requestId settings_load_failed",
+                error
+            )
             openMainActivityWithError(getString(R.string.shortcut_settings_load_failed))
             return
         }
 
         if (input == null) {
-            Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR input_not_found id=$id")
+            Log.e(LOG_TAG, "SHORTCUT_RUN_ERROR request=$requestId input_not_found id=$id")
             openMainActivityWithError(getString(R.string.shortcut_input_missing))
             return
         }
 
-        val requestId = UUID.randomUUID().toString().take(8)
+        Log.i(
+            LOG_TAG,
+            "SHORTCUT_INPUT_LOADED request=$requestId inputId=${input.id} " +
+                "uuid=${input.routineUuid} action=${input.action}"
+        )
+
         Log.i(
             LOG_TAG,
             "SHORTCUT_SERVICE_START request=$requestId inputId=${input.id} " +
@@ -88,5 +106,6 @@ class ShortcutRunActivity : Activity() {
 
     companion object {
         private const val LOG_TAG = "RoutineBridge"
+        const val EXTRA_REQUEST_ID = "routinebridge_request_id"
     }
 }
