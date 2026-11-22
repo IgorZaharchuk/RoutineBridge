@@ -184,7 +184,7 @@ class MainActivity : Activity() {
             content.addView(
                 button("Диагностика Root Core") {
                     val diagnosticsClass = Class.forName(
-                        "com.routinebridge.RootCoreParallelDiagnosticsActivity"
+                        "com.routinebridge.RootCoreDiagnosticsActivity"
                     )
                     startActivity(Intent(this, diagnosticsClass))
                 },

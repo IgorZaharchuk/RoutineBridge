@@ -2,16 +2,18 @@ package com.routinebridge
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.ComponentName
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.SystemClock
 import android.net.Uri
 import android.view.Gravity
 import android.widget.Button
-import android.widget.EditText
+import android.widget.ArrayAdapter
+import android.widget.Spinner
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -22,13 +24,17 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.UUID
 
 class RootCoreDiagnosticsActivity : Activity() {
 
     private val worker = Executors.newSingleThreadExecutor()
     private var session: RootCoreSession? = null
     private lateinit var output: TextView
-    private lateinit var routineId: EditText
+    private lateinit var routineSpinners: List<Spinner>
+    private var availableRoutines: List<ManualRoutine> = emptyList()
 
     private val providerUri = Uri.parse(
         "content://com.samsung.android.app.routines.externalprovider/" +
@@ -110,67 +116,63 @@ class RootCoreDiagnosticsActivity : Activity() {
         }
 
         content.addView(text(
-            "Отдельный тест запуска Activity",
+            "Проверка запуска Samsung-сценариев",
             17f, white
         ).apply { setPadding(0, dp(18), 0, dp(6)) })
 
-        routineId = EditText(this).apply {
-            hint = "Числовой UUID ручного сценария"
-            setSingleLine(true)
-            setTextColor(white)
-            setHintTextColor(secondary)
+        routineSpinners = List(3) { index ->
+            Spinner(this).also { spinner ->
+                prepareSpinner(spinner)
+                content.addView(text("Сценарий ${index + 1}", 13f, secondary))
+                content.addView(
+                    spinner,
+                    LinearLayout.LayoutParams(-1, dp(48)).apply {
+                        bottomMargin = dp(5)
+                    }
+                )
+            }
         }
-        content.addView(routineId)
 
-        addButton(content, "6. Запустить сценарий через Root Core") {
-            val id = routineId.text.toString().trim().toLongOrNull()
-            if (id == null) {
-                log("Укажи числовой UUID сценария.")
+        addButton(content, "Обновить список сценариев") {
+            loadRoutines()
+        }
+
+        addButton(content, "6. Запустить первый выбранный сценарий", blue) {
+            val selected = selectedRoutines(1)
+            if (selected == null) {
+                log("Выбери сценарий в первом списке.")
             } else {
                 AlertDialog.Builder(this)
                     .setTitle("Запустить Samsung-сценарий?")
                     .setMessage(
-                        "Сценарий $id будет запущен через системную команду am."
+                        "Сценарий «${selected.first().name}» будет включён через общий диспетчер."
                     )
                     .setNegativeButton("Отмена", null)
                     .setPositiveButton("Запустить") { _, _ ->
-                        runTest("Запуск Activity") {
-                            val extras = Bundle().apply {
-                                putLong("EXTRA_KEY_ROUTINE_UUID", id)
-                            }
-                            requireSession().launchActivity(
-                                ComponentName(
-                                    "com.samsung.android.app.routines",
-                                    "com.samsung.android.app.routines.ui.shortcut.ShortcutLaunchActivity"
-                                ),
-                                null,
-                                extras,
-                                0x10008000
-                            )
-                            "Команда am start завершилась с кодом 0. " +
-                                "Проверь фактическое выполнение сценария на устройстве."
+                        runTest("Одиночный запуск") {
+                            runDispatcherSequence(selected, "TEST")
                         }
                     }
                     .show()
             }
         }
 
-        addButton(content, "7. Выполнить полный цикл") {
-            val id = routineId.text.toString().trim().toLongOrNull()
-            if (id == null) {
-                log("Укажи числовой UUID сценария.")
+        addButton(content, "7. Последовательно запустить три сценария", blue) {
+            val selected = selectedRoutines(3)
+            if (selected == null) {
+                log("Выбери три разных сценария.")
             } else {
                 AlertDialog.Builder(this)
-                    .setTitle("Выполнить полный цикл?")
+                    .setTitle("Подтвердить последовательный запуск?")
                     .setMessage(
-                        "Сценарий $id будет запущен один раз. " +
-                            "После запуска проверим is_running. " +
-                            "Исходное состояние автоматически восстанавливаться не будет."
+                        "Три выбранных сценария будут включены по очереди. " +
+                            "Каждый следующий запустится только после подтверждения предыдущего. " +
+                            "Связанные устройства могут изменить состояние."
                     )
                     .setNegativeButton("Отмена", null)
-                    .setPositiveButton("Выполнить") { _, _ ->
-                        runTest("Полный цикл") {
-                            runFullCycle(id)
+                    .setPositiveButton("Запустить") { _, _ ->
+                        runTest("Последовательный запуск") {
+                            runDispatcherSequence(selected, "T")
                         }
                     }
                     .show()
@@ -196,140 +198,117 @@ class RootCoreDiagnosticsActivity : Activity() {
         val scroll = ScrollView(this)
         scroll.addView(content)
         setContentView(scroll)
+        loadRoutines()
     }
 
-    private fun runFullCycle(id: Long): String {
-        val report = mutableListOf<String>()
-        var current: RootCoreSession? = null
-
-        try {
-            check(session == null) {
-                "Сначала закрой открытую root-сессию."
-            }
-            report.add("1. Открытие root-сессии")
-            val openStart = SystemClock.elapsedRealtime()
-            current = RootCore.open(this, 30_000L)
-            session = current
-            report.add(
-                "OK: Binder готов за " +
-                    "${SystemClock.elapsedRealtime() - openStart} мс"
-            )
-
-            report.add("2. Проверка Binder и UID")
-            val pingStart = SystemClock.elapsedRealtime()
-            val uid = current.ping()
-            check(uid == 0) { "Ожидался UID 0, получен $uid" }
-            report.add(
-                "OK: UID=$uid, Ping " +
-                    "${SystemClock.elapsedRealtime() - pingStart} мс"
-            )
-
-            report.add("3. Поиск сценария в Samsung Provider")
-            val before = readRoutineRunning(current, id)
-            report.add("OK: UUID=$id, is_running до запуска=$before")
-
-            report.add("4. Запуск сценария")
-            val extras = Bundle().apply {
-                putLong("EXTRA_KEY_ROUTINE_UUID", id)
-            }
-            val launchStart = SystemClock.elapsedRealtime()
-            current.launchActivity(
-                ComponentName(
-                    "com.samsung.android.app.routines",
-                    "com.samsung.android.app.routines.ui.shortcut.ShortcutLaunchActivity"
-                ),
-                null,
-                extras,
-                0x10008000
-            )
-            report.add(
-                "OK: am start завершился без ошибки за " +
-                    "${SystemClock.elapsedRealtime() - launchStart} мс"
-            )
-
-            report.add("5. Проверка изменения is_running")
-            val checkStart = SystemClock.elapsedRealtime()
-            val deadline = checkStart + 5_000L
-            var after = before
-
-            while (after == before &&
-                SystemClock.elapsedRealtime() < deadline) {
-                SystemClock.sleep(250L)
-                after = readRoutineRunning(current, id)
-            }
-
-            if (after != before) {
-                report.add(
-                    "OK: is_running изменился: $before -> $after"
-                )
-            } else {
-                report.add(
-                    "НЕ ПОДТВЕРЖДЕНО: is_running не изменился за 5 секунд. " +
-                        "Текущее значение=$after"
-                )
-            }
-        } catch (error: Throwable) {
-            report.add(
-                "ОШИБКА ЦИКЛА: ${error.javaClass.simpleName}: " +
-                    "${error.message ?: error}"
-            )
-        } finally {
-            if (current != null) {
-                report.add("6. Закрытие root-сессии")
-                try {
-                    current.close()
-                    val stopped = current.awaitTermination(5_000L)
-                    if (stopped) {
-                        session = null
-                        report.add("OK: root-процесс завершился")
-                    } else {
-                        report.add(
-                            "ОШИБКА: root-процесс не завершился за 5 секунд; " +
-                                "isAlive=${current.isRootProcessAlive()}"
+    private fun loadRoutines() {
+        worker.execute {
+            try {
+                val loaded = ManualRoutineRepository(applicationContext).load()
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    availableRoutines = loaded
+                    val labels = listOf("— Выбери сценарий —") +
+                        loaded.map { it.name }
+                    routineSpinners.forEach { spinner ->
+                        val adapter = ArrayAdapter(
+                            this,
+                            android.R.layout.simple_spinner_item,
+                            labels
                         )
+                        adapter.setDropDownViewResource(
+                            android.R.layout.simple_spinner_dropdown_item
+                        )
+                        spinner.adapter = adapter
                     }
-                } catch (error: Throwable) {
-                    report.add(
-                        "ОШИБКА закрытия: ${error.javaClass.simpleName}: " +
-                            "${error.message ?: error}"
-                    )
+                    log("Samsung Provider: загружено сценариев — ${loaded.size}")
                 }
+            } catch (error: Throwable) {
+                log(
+                    "Ошибка загрузки сценариев: " +
+                        "${error.javaClass.simpleName}: ${error.message}"
+                )
             }
         }
-
-        return report.joinToString("\n")
     }
 
-    private fun readRoutineRunning(
-        current: RootCoreSession,
-        id: Long
-    ): Boolean {
-        val result = current.queryProvider(providerUri, null)
-        val columns = result.getStringArray("columns")
-            ?: error("Provider не вернул список столбцов")
-
-        @Suppress("DEPRECATION")
-        val rows = result.getParcelableArrayList<Bundle>("rows")
-            ?: error("Provider не вернул строки")
-
-        val uuidIndex = columns.indexOf("uuid")
-        val runningIndex = columns.indexOf("is_running")
-
-        check(uuidIndex >= 0) { "В Provider отсутствует столбец uuid" }
-        check(runningIndex >= 0) { "В Provider отсутствует столбец is_running" }
-
-        val row = rows.firstOrNull {
-            it.getString("c$uuidIndex")?.toLongOrNull() == id
-        } ?: error("Сценарий UUID=$id не найден в Provider")
-
-        val value = row.getString("c$runningIndex")
-            ?: error("Provider вернул пустое значение is_running")
-
-        return when (value.trim()) {
-            "1", "true", "TRUE" -> true
-            "0", "false", "FALSE" -> false
-            else -> error("Неизвестное значение is_running: $value")
+    private fun selectedRoutines(count: Int): List<ManualRoutine>? {
+        if (!::routineSpinners.isInitialized) return null
+        val selected = routineSpinners.take(count).mapNotNull { spinner ->
+            availableRoutines.getOrNull(spinner.selectedItemPosition - 1)
         }
+        if (selected.size != count) return null
+        if (selected.map { it.uuid }.distinct().size != count) return null
+        return selected
+    }
+
+    private fun runDispatcherSequence(
+        selected: List<ManualRoutine>,
+        label: String
+    ): String {
+        val report = mutableListOf<String>()
+        val repository = ManualRoutineRepository(applicationContext)
+
+        check(selected.isNotEmpty()) { "Не выбраны сценарии." }
+        check(selected.map { it.uuid }.distinct().size == selected.size) {
+            "Нельзя выбирать один сценарий несколько раз."
+        }
+
+        report.add("DISPATCHER: общий SamsungRoutineDispatcher")
+        report.add("MODE: последовательное выполнение, ENABLE")
+        report.add("SELECTED: ${selected.joinToString { it.name }}")
+
+        for ((index, chosen) in selected.withIndex()) {
+            val current = repository.load().firstOrNull {
+                it.uuid == chosen.uuid
+            } ?: error("${label}${index + 1}: сценарий исчез из Provider")
+
+            check(current.isEnabled == true) {
+                "${label}${index + 1}: '${current.name}' выключен или состояние неизвестно"
+            }
+            check(current.isRunning == false) {
+                "${label}${index + 1}: '${current.name}' уже запущен или состояние неизвестно"
+            }
+
+            report.add("${label}${index + 1}: READY '${current.name}', is_running=false")
+
+            val latch = CountDownLatch(1)
+            val requestId = UUID.randomUUID().toString()
+
+            SamsungRoutineDispatcher.enqueue(
+                context = applicationContext,
+                input = RoutineInput(
+                    id = UUID.randomUUID().toString(),
+                    label = "Root Core diagnostics",
+                    routineUuid = current.uuid,
+                    routineName = current.name,
+                    action = RoutineInputAction.ENABLE
+                ),
+                requestId = requestId,
+                onQueueDrained = { latch.countDown() }
+            )
+
+            report.add("${label}${index + 1}: ENQUEUED uuid=${current.uuid}")
+
+            check(latch.await(15, TimeUnit.SECONDS)) {
+                "${label}${index + 1}: диспетчер не завершил очередь за 15 секунд. " +
+                    "Следующий сценарий не запускается."
+            }
+
+            val confirmed = repository.load().firstOrNull {
+                it.uuid == current.uuid
+            } ?: error("${label}${index + 1}: сценарий исчез после запуска")
+
+            check(confirmed.isRunning == true) {
+                "${label}${index + 1}: запуск не подтверждён Provider; " +
+                    "is_running=${confirmed.isRunning}"
+            }
+
+            report.add("${label}${index + 1}: CONFIRMED is_running=true")
+        }
+
+        report.add("RESULT: все выбранные сценарии подтверждены Provider")
+        return report.joinToString("\n")
     }
 
     private fun queryReport(current: RootCoreSession): String {
@@ -391,13 +370,21 @@ class RootCoreDiagnosticsActivity : Activity() {
     private fun addButton(
         parent: LinearLayout,
         label: String,
+        backgroundColor: Int = Color.rgb(25, 31, 45),
         action: () -> Unit
     ) {
         val button = Button(this).apply {
             text = label
             isAllCaps = false
             setTextColor(white)
-            setBackgroundColor(blue)
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = rounded(backgroundColor, 8)
+            stateListAnimator = null
+            elevation = 0f
+            minimumWidth = 0
+            setPadding(dp(4), 0, dp(4), 0)
             setOnClickListener { action() }
         }
         parent.addView(
@@ -408,6 +395,18 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         )
     }
+
+    private fun prepareSpinner(spinner: Spinner) {
+        spinner.setPopupBackgroundDrawable(rounded(Color.rgb(30, 30, 30), 8))
+        spinner.backgroundTintList =
+            android.content.res.ColorStateList.valueOf(Color.rgb(48, 64, 86))
+    }
+
+    private fun rounded(color: Int, radius: Int) =
+        GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radius).toFloat()
+        }
 
     private fun text(value: String, size: Float, color: Int) =
         TextView(this).apply {
