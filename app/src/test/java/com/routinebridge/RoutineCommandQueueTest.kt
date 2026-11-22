@@ -380,6 +380,121 @@ class RoutineCommandQueueTest {
         assertTrue(queue.pendingSnapshot().isEmpty())
     }
 
+
+    @Test
+    fun `pending coalescing keeps all source request IDs`() {
+        val queue = RoutineCommandQueue()
+
+        queue.enqueue(10L, BooleanStateTransform.ENABLE, "r1")
+        queue.enqueue(20L, BooleanStateTransform.TOGGLE, "other")
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE, "r2")
+
+        assertEquals(
+            listOf("r1", "r2"),
+            queue.pendingRequestIds(10L)
+        )
+    }
+
+    @Test
+    fun `pending identity cancellation returns all cancelled request IDs`() {
+        val queue = RoutineCommandQueue()
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE, "r1")
+        val result = queue.enqueue(10L, BooleanStateTransform.TOGGLE, "r2")
+
+        assertEquals(listOf("r1", "r2"), result.cancelledRequestIds)
+        assertTrue(queue.pendingSnapshot().isEmpty())
+        assertTrue(queue.pendingRequestIds(10L).isEmpty())
+    }
+
+    @Test
+    fun `in-flight follow-up IDs become IDs of corrective attempt`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.ENABLE, "initial")
+        assertNotNull(queue.beginNext(10L, false))
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE, "followup")
+
+        assertEquals(listOf("initial"), queue.inFlightRequestIds())
+        assertFalse(queue.advanceAfterSuccess(false, true))
+        assertEquals(listOf("followup", "initial"), queue.inFlightRequestIds())
+    }
+
+    @Test
+    fun `cancelled in-flight follow-ups are reported and not attached to correction`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.ENABLE, "initial")
+        assertNotNull(queue.beginNext(10L, false))
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE, "followup-1")
+        val cancelled = queue.enqueue(
+            10L, BooleanStateTransform.TOGGLE, "followup-2"
+        )
+
+        assertEquals(
+            listOf("followup-1", "followup-2"),
+            cancelled.cancelledRequestIds
+        )
+        assertTrue(queue.advanceAfterSuccess(false, true))
+        assertFalse(queue.hasInFlight())
+    }
+
+    @Test
+    fun `failed initial attempt retains only follow-up request IDs`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.ENABLE, "initial")
+        assertNotNull(queue.beginNext(10L, false))
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE, "followup")
+        queue.releaseInFlight()
+
+        assertEquals(listOf("followup"), queue.pendingRequestIds(10L))
+    }
+
+    @Test
+    fun `failed corrective attempt retains its full causal request chain`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.ENABLE, "initial")
+        assertNotNull(queue.beginNext(10L, false))
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE, "followup")
+        assertFalse(queue.advanceAfterSuccess(false, true))
+        queue.releaseInFlight(preserveAttempt = true)
+
+        assertEquals(
+            listOf("followup", "initial"),
+            queue.pendingRequestIds(10L)
+        )
+    }
+
+    @Test
+    fun `new event after deferred correction joins preserved causal chain`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.ENABLE, "initial")
+        assertNotNull(queue.beginNext(10L, false))
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE, "followup")
+        assertFalse(queue.advanceAfterSuccess(false, true))
+        queue.releaseInFlight(preserveAttempt = true)
+
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE, "new-event")
+
+        assertEquals(
+            listOf("followup", "initial", "new-event"),
+            queue.pendingRequestIds(10L)
+        )
+    }
+
+    @Test
+    fun `new pending command after cancellation starts with only its own ID`() {
+        val queue = RoutineCommandQueue()
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE, "old-1")
+        queue.enqueue(10L, BooleanStateTransform.TOGGLE, "old-2")
+        queue.enqueue(10L, BooleanStateTransform.ENABLE, "new")
+
+        assertEquals(listOf("new"), queue.pendingRequestIds(10L))
+    }
+
     @Test
     fun `successful toggle uses executor fresh initial state`() {
         val queue = RoutineCommandQueue()

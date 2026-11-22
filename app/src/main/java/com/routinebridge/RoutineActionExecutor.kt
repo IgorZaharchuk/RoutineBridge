@@ -38,12 +38,12 @@ internal class RoutineActionExecutor(
     fun executeOnce(
         routineUuid: Long,
         transform: BooleanStateTransform,
-        requestId: String,
+        requestIds: List<String>,
         onStateRead: (Boolean) -> Unit
     ): RoutineExecutionResult {
         Log.i(
             LOG_TAG,
-            "EXEC_ONCE_START request=$requestId uuid=$routineUuid transform=$transform"
+            "EXEC_ONCE_START request=${requestIds.firstOrNull() ?: "unknown"} related=${requestIds.drop(1).joinToString(",")} uuid=$routineUuid transform=$transform"
         )
 
         val session = RootCoreAccess.open(appContext)
@@ -86,7 +86,7 @@ internal class RoutineActionExecutor(
             if (current == targetState) {
                 Log.i(
                     LOG_TAG,
-                    "EXEC_ONCE_SKIPPED request=$requestId uuid=$routineUuid state=$current"
+                    "EXEC_ONCE_SKIPPED request=${requestIds.firstOrNull() ?: "unknown"} related=${requestIds.drop(1).joinToString(",")} uuid=$routineUuid state=$current"
                 )
                 return RoutineExecutionResult(
                     status = RoutineExecutionStatus.SKIPPED,
@@ -102,7 +102,7 @@ internal class RoutineActionExecutor(
                 putLong("EXTRA_KEY_ROUTINE_UUID", routineUuid)
             }
 
-            Log.i(LOG_TAG, "SAMSUNG_LAUNCH request=$requestId uuid=$routineUuid")
+            Log.i(LOG_TAG, "SAMSUNG_LAUNCH request=${requestIds.firstOrNull() ?: "unknown"} related=${requestIds.drop(1).joinToString(",")} uuid=$routineUuid")
             val launchStart = SystemClock.elapsedRealtime()
 
             session.launchActivity(
@@ -117,7 +117,7 @@ internal class RoutineActionExecutor(
 
             Log.i(
                 LOG_TAG,
-                "SAMSUNG_RETURN request=$requestId " +
+                "SAMSUNG_RETURN request=${requestIds.firstOrNull() ?: "unknown"} " +
                     "elapsed=${SystemClock.elapsedRealtime() - launchStart}ms"
             )
 
@@ -138,7 +138,7 @@ internal class RoutineActionExecutor(
             if (actual == targetState) {
                 Log.i(
                     LOG_TAG,
-                    "EXEC_ONCE_SUCCESS request=$requestId uuid=$routineUuid state=$actual"
+                    "EXEC_ONCE_SUCCESS request=${requestIds.firstOrNull() ?: "unknown"} related=${requestIds.drop(1).joinToString(",")} uuid=$routineUuid state=$actual"
                 )
                 return RoutineExecutionResult(
                     status = RoutineExecutionStatus.SUCCESS,
@@ -152,7 +152,7 @@ internal class RoutineActionExecutor(
 
             Log.w(
                 LOG_TAG,
-                "EXEC_ONCE_TIMEOUT request=$requestId uuid=$routineUuid " +
+                "EXEC_ONCE_TIMEOUT request=${requestIds.firstOrNull() ?: "unknown"} " +
                     "expected=$targetState actual=$actual"
             )
 

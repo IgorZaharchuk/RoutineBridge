@@ -5,7 +5,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
-import java.util.UUID
 import java.util.concurrent.Executors
 
 /**
@@ -22,7 +21,6 @@ internal object SamsungRoutineDispatcher {
     }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val drainCallbacks = mutableListOf<() -> Unit>()
-    private val pendingRequestIds = mutableMapOf<Long, String>()
 
     @Volatile
     private var appContext: Context? = null
@@ -55,22 +53,18 @@ internal object SamsungRoutineDispatcher {
             appContext = context.applicationContext
             drainCallbacks.add(onQueueDrained)
 
-            val wasAlreadyInFlight =
-                queue.inFlightSnapshot()?.routineUuid == input.routineUuid
-
-            queue.enqueue(
+            val enqueueResult = queue.enqueue(
                 input.routineUuid,
-                BooleanStateTransform.from(input.action)
+                BooleanStateTransform.from(input.action),
+                requestId
             )
 
-            val isPending = queue.pendingSnapshot().any {
-                it.routineUuid == input.routineUuid
-            }
-
-            if (!wasAlreadyInFlight && isPending) {
-                pendingRequestIds.putIfAbsent(input.routineUuid, requestId)
-            } else if (!wasAlreadyInFlight) {
-                pendingRequestIds.remove(input.routineUuid)
+            if (enqueueResult.cancelledRequestIds.isNotEmpty()) {
+                Log.i(
+                    TAG,
+                    "DISPATCH_COALESCED_CANCELLED uuid=${input.routineUuid} " +
+                        "requests=${enqueueResult.cancelledRequestIds.joinToString(",")}"
+                )
             }
 
             Log.i(
@@ -153,31 +147,32 @@ internal object SamsungRoutineDispatcher {
                 if (command == null) {
                     null
                 } else {
-                    command to (
-                        pendingRequestIds.remove(uuid)
-                            ?: UUID.randomUUID().toString().take(8)
-                    )
+                    command to queue.inFlightRequestIds()
                 }
             } ?: return false
 
             val started = start.first
-            requestId = start.second
+            var requestIds = start.second
+            requestId = requestIds.firstOrNull() ?: "unknown"
 
             Log.i(
                 TAG,
-                "DISPATCH_START request=$requestId uuid=$uuid " +
-                    "transform=${started.transform}"
+                "DISPATCH_START request=$requestId " +
+                    "related=${requestIds.drop(1).joinToString(",")} " +
+                    "uuid=$uuid transform=${started.transform}"
             )
 
             while (true) {
                 // Execute only the frozen physical transform. The executor
                 // supplies its Provider baseline before launching Samsung.
                 val transform = queue.inFlightAttemptTransform() ?: return false
+                requestIds = queue.inFlightRequestIds()
+                requestId = requestIds.firstOrNull() ?: "unknown"
 
                 val result = executor.executeOnce(
                     routineUuid = uuid,
                     transform = transform,
-                    requestId = requestId,
+                    requestIds = requestIds,
                     onStateRead = { state ->
                         check(queue.setInFlightBaseline(state) != null) {
                             "In-flight command disappeared before launch"
@@ -214,22 +209,33 @@ internal object SamsungRoutineDispatcher {
                         context.getString(R.string.routine_state_unknown)
                     )
 
+                // Include events received while the physical operation
+                // was running before the queue potentially clears in-flight.
+                requestIds = queue.inFlightRequestIds()
+                requestId = requestIds.firstOrNull() ?: "unknown"
+
                 if (queue.advanceAfterSuccess(result.initialState, actual)) {
                     val finalStatus =
                         if (performedLaunch) "SUCCESS" else "SKIPPED"
 
                     Log.i(
                         TAG,
-                        "DISPATCH_$finalStatus request=$requestId uuid=$uuid " +
-                            "state=$actual"
+                        "DISPATCH_$finalStatus request=$requestId " +
+                            "related=${requestIds.drop(1).joinToString(",")} " +
+                            "uuid=$uuid state=$actual"
                     )
                     return false
                 }
 
+                requestIds = queue.inFlightRequestIds()
+                requestId = requestIds.firstOrNull() ?: "unknown"
+
                 Log.i(
                     TAG,
-                    "DISPATCH_RECONCILE request=$requestId uuid=$uuid " +
-                        "actual=$actual desired=${queue.inFlightDesiredState()}"
+                    "DISPATCH_RECONCILE request=$requestId " +
+                        "related=${requestIds.drop(1).joinToString(",")} " +
+                        "uuid=$uuid actual=$actual " +
+                        "desired=${queue.inFlightDesiredState()}"
                 )
             }
         } catch (error: Exception) {

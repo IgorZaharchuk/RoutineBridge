@@ -12,18 +12,26 @@ internal data class RoutinePendingToken(
     val revision: Long
 )
 
+internal data class RoutineEnqueueResult(
+    val cancelledRequestIds: List<String>
+)
+
 internal class RoutineCommandQueue {
 
     private data class Pending(
         val transform: BooleanStateTransform,
-        val revision: Long
+        val revision: Long,
+        val requestIds: List<String>
     )
 
     private data class InFlight(
         val routineUuid: Long,
         var baselineState: Boolean?,
         var attemptTransform: BooleanStateTransform,
-        var followUpTransform: BooleanStateTransform = BooleanStateTransform.IDENTITY
+        var followUpTransform: BooleanStateTransform = BooleanStateTransform.IDENTITY,
+        var attemptRequestIds: MutableList<String>,
+        var followUpRequestIds: MutableList<String> = mutableListOf(),
+        val relatedRequestIds: MutableList<String> = mutableListOf()
     ) {
         fun snapshot() = RoutineCommandSnapshot(
             routineUuid,
@@ -42,36 +50,57 @@ internal class RoutineCommandQueue {
     private var nextRevision = 0L
 
     @Synchronized
-    fun enqueue(routineUuid: Long, transform: BooleanStateTransform) {
-        if (transform == BooleanStateTransform.IDENTITY) return
+    fun enqueue(
+        routineUuid: Long,
+        transform: BooleanStateTransform,
+        requestId: String? = null
+    ): RoutineEnqueueResult {
+        val eventIds = listOfNotNull(requestId)
+
+        if (transform == BooleanStateTransform.IDENTITY) {
+            return RoutineEnqueueResult(eventIds)
+        }
 
         val active = inFlight
         if (active?.routineUuid == routineUuid) {
             active.followUpTransform =
                 active.followUpTransform.then(transform)
-            return
+            active.followUpRequestIds.addAll(eventIds)
+
+            if (active.followUpTransform == BooleanStateTransform.IDENTITY) {
+                val cancelled = active.followUpRequestIds.toList()
+                active.followUpRequestIds.clear()
+                return RoutineEnqueueResult(cancelled)
+            }
+
+            return RoutineEnqueueResult(emptyList())
         }
 
-        enqueuePending(routineUuid, transform)
+        return RoutineEnqueueResult(
+            enqueuePending(routineUuid, transform, eventIds)
+        )
     }
 
     private fun enqueuePending(
         routineUuid: Long,
         transform: BooleanStateTransform,
+        requestIds: List<String>,
         atFront: Boolean = false
-    ) {
-        val combined = (pending[routineUuid]?.transform
+    ): List<String> {
+        val previous = pending[routineUuid]
+        val combined = (previous?.transform
             ?: BooleanStateTransform.IDENTITY).then(transform)
+        val combinedIds = previous?.requestIds.orEmpty() + requestIds
 
         if (combined == BooleanStateTransform.IDENTITY) {
             pending.remove(routineUuid)
-            return
+            return combinedIds
         }
 
-        val entry = Pending(combined, ++nextRevision)
+        val entry = Pending(combined, ++nextRevision, combinedIds)
         if (!atFront || pending.isEmpty()) {
             pending[routineUuid] = entry
-            return
+            return emptyList()
         }
 
         val reordered = LinkedHashMap<Long, Pending>()
@@ -81,7 +110,12 @@ internal class RoutineCommandQueue {
         }
         pending.clear()
         pending.putAll(reordered)
+        return emptyList()
     }
+
+    @Synchronized
+    fun pendingRequestIds(routineUuid: Long): List<String> =
+        pending[routineUuid]?.requestIds.orEmpty().toList()
 
     @Synchronized
     fun nextPendingUuid(): Long? = pending.keys.firstOrNull()
@@ -112,7 +146,8 @@ internal class RoutineCommandQueue {
         val active = InFlight(
             routineUuid = routineUuid,
             baselineState = baselineState,
-            attemptTransform = entry.transform
+            attemptTransform = entry.transform,
+            attemptRequestIds = entry.requestIds.toMutableList()
         )
         inFlight = active
         return active.snapshot()
@@ -124,6 +159,20 @@ internal class RoutineCommandQueue {
     @Synchronized
     fun inFlightAttemptTransform(): BooleanStateTransform? =
         inFlight?.attemptTransform
+
+    /**
+     * IDs of events that caused the current physical attempt, followed by
+     * IDs of earlier attempts in the same logical reconciliation.
+     */
+    @Synchronized
+    fun inFlightRequestIds(): List<String> {
+        val active = inFlight ?: return emptyList()
+        return (
+            active.attemptRequestIds +
+                active.relatedRequestIds +
+                active.followUpRequestIds
+            ).distinct()
+    }
 
     @Synchronized
     fun setInFlightBaseline(state: Boolean): Boolean? {
@@ -162,11 +211,14 @@ internal class RoutineCommandQueue {
         // The previous physical attempt is complete. Turn the remaining
         // desired state into a new attempt based on the actual Provider state.
         active.baselineState = actualState
+        active.relatedRequestIds.addAll(active.attemptRequestIds)
         active.attemptTransform = if (desired) {
             BooleanStateTransform.ENABLE
         } else {
             BooleanStateTransform.DISABLE
         }
+        active.attemptRequestIds = active.followUpRequestIds.toMutableList()
+        active.followUpRequestIds.clear()
         active.followUpTransform = BooleanStateTransform.IDENTITY
         return false
     }
@@ -187,11 +239,18 @@ internal class RoutineCommandQueue {
         } else {
             active.followUpTransform
         }
+        val remainingIds = if (preserveAttempt) {
+            active.attemptRequestIds + active.followUpRequestIds +
+                active.relatedRequestIds
+        } else {
+            active.followUpRequestIds
+        }
 
         if (remaining != BooleanStateTransform.IDENTITY) {
             enqueuePending(
                 active.routineUuid,
                 remaining,
+                remainingIds.distinct(),
                 atFront = true
             )
         }
