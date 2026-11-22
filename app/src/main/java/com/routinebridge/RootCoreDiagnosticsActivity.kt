@@ -211,7 +211,7 @@ class RootCoreDiagnosticsActivity : Activity() {
             worker.execute {
                 val journalText = captureRoutineBridgeLogcat()
                 val combined = testReport +
-                    "\\n\\n===== LOGCAT: RoutineBridge =====\\n" +
+                    "\n\n===== LOGCAT: RoutineBridge =====\n" +
                     journalText
 
                 runOnUiThread {
@@ -686,7 +686,7 @@ class RootCoreDiagnosticsActivity : Activity() {
             val captured = process.inputStream.bufferedReader().use { it.readText() }
             val finished = process.waitFor()
             if (finished != 0) {
-                "LOGCAT_UNAVAILABLE: logcat завершился с кодом $finished\\n$captured"
+                "LOGCAT_UNAVAILABLE: logcat завершился с кодом $finished\n$captured"
             } else if (captured.isBlank()) {
                 "Для тега RoutineBridge записей нет."
             } else {
