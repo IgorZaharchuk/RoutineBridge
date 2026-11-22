@@ -152,10 +152,10 @@ Request: %4$s</string>
     <string name="diagnostics_dispatcher_mode">MODE: последовательное выполнение, ENABLE</string>
     <string name="diagnostics_dispatcher_selected">SELECTED: %1$s</string>
     <string name="diagnostics_routine_disappeared">%1$s%2$d: сценарий исчез из Provider</string>
-    <string name="diagnostics_routine_disabled">%1$s%2$d: '%3$s' выключен или состояние неизвестно</string>
+    <string name="diagnostics_routine_disabled">%1$s%2$d: сценарий %3$s выключен или состояние неизвестно</string>
     <string name="diagnostics_provider_state_unknown">Provider не сообщил is_running</string>
     <string name="diagnostics_state_unknown_result">RESULT: тест остановлен — состояние сценария неизвестно</string>
-    <string name="diagnostics_routine_ready">%1$s%2$d: READY '%3$s', is_running=%4$s</string>
+    <string name="diagnostics_routine_ready">%1$s%2$d: READY %3$s, is_running=%4$s</string>
     <string name="diagnostics_routine_enqueued">%1$s%2$d: ENQUEUED uuid=%3$s</string>
     <string name="diagnostics_dispatcher_timeout">%1$s%2$d: диспетчер не завершил очередь за 15 секунд. Следующий сценарий не запускается.</string>
     <string name="diagnostics_routine_disappeared_after">%1$s%2$d: сценарий исчез после запуска</string>

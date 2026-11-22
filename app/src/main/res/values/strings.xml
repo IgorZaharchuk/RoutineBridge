@@ -150,10 +150,10 @@ Request: %4$s</string>
     <string name="diagnostics_dispatcher_mode">MODE: sequential execution, ENABLE</string>
     <string name="diagnostics_dispatcher_selected">SELECTED: %1$s</string>
     <string name="diagnostics_routine_disappeared">%1$s%2$d: routine disappeared from Provider</string>
-    <string name="diagnostics_routine_disabled">%1$s%2$d: '%3$s' is disabled or its state is unknown</string>
+    <string name="diagnostics_routine_disabled">%1$s%2$d: %3$s is disabled or its state is unknown</string>
     <string name="diagnostics_provider_state_unknown">Provider did not report is_running</string>
     <string name="diagnostics_state_unknown_result">RESULT: test stopped — routine state is unknown</string>
-    <string name="diagnostics_routine_ready">%1$s%2$d: READY '%3$s', is_running=%4$s</string>
+    <string name="diagnostics_routine_ready">%1$s%2$d: READY %3$s, is_running=%4$s</string>
     <string name="diagnostics_routine_enqueued">%1$s%2$d: ENQUEUED uuid=%3$s</string>
     <string name="diagnostics_dispatcher_timeout">%1$s%2$d: dispatcher did not drain the queue within 15 seconds. The next routine will not start.</string>
     <string name="diagnostics_routine_disappeared_after">%1$s%2$d: routine disappeared after launch</string>
