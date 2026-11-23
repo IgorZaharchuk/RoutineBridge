@@ -108,6 +108,12 @@ public final class RootCoreSession implements AutoCloseable {
         BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context ignored, Intent intent) {
+                android.util.Log.i(
+                        "RoutineBridgeRootCore",
+                        "ROOTCORE_BROADCAST_RECEIVED session=" + sessionId
+                                + " thread=" + Thread.currentThread().getName()
+                );
+
                 if (!action.equals(intent.getAction())) {
                     android.util.Log.w(
                             "RoutineBridgeRootCore",
@@ -161,6 +167,11 @@ public final class RootCoreSession implements AutoCloseable {
 
                     IBinder token = new Binder();
                     manager.connect(token);
+
+                    android.util.Log.i(
+                            "RoutineBridgeRootCore",
+                            "ROOTCORE_BROADCAST_ACCEPTED session=" + sessionId
+                    );
 
                     IBinder.DeathRecipient deathRecipient = () -> {
                         remoteRef.set(null);
