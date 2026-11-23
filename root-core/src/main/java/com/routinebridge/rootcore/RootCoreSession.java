@@ -53,7 +53,15 @@ public final class RootCoreSession implements AutoCloseable {
         this.deathRecipient = deathRecipient;
     }
 
-    static RootCoreSession open(Context context, long timeoutMs) throws Exception {
+    static RootCoreSession open(
+            Context context,
+            long timeoutMs,
+            RootCorePolicy policy
+    ) throws Exception {
+        if (policy == null) {
+            throw new IllegalArgumentException("RootCore policy is null");
+        }
+        String encodedPolicy = policy.encode();
         File jar = installBootstrapAsset(context);
 
         int uid = Process.myUid();
@@ -178,7 +186,8 @@ public final class RootCoreSession implements AutoCloseable {
                     "com.routinebridge.rootcore.bootstrap.RootServerMain " +
                     shellQuote(packageName) + " " +
                     uid + " " + userId + " " +
-                    shellQuote(sessionId) + " >/dev/null 2>&1";
+                    shellQuote(sessionId) + " " +
+                    shellQuote(encodedPolicy) + " >/dev/null 2>&1";
 
             process = new ProcessBuilder("su", "-c", command)
                     .redirectErrorStream(true)

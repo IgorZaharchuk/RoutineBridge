@@ -12,9 +12,9 @@ public final class RootServerMain {
 
     public static void main(String[] args) {
         try {
-            if (args == null || args.length != 4) {
+            if (args == null || args.length != 5) {
                 throw new IllegalArgumentException(
-                        "Expected package, client UID, user ID and session ID"
+                        "Expected package, client UID, user ID, session ID and policy"
                 );
             }
 
@@ -22,6 +22,7 @@ public final class RootServerMain {
             int clientUid = Integer.parseInt(args[1]);
             int userId = Integer.parseInt(args[2]);
             String sessionId = args[3];
+            String encodedPolicy = args[4];
             if (sessionId.isEmpty()) {
                 throw new IllegalArgumentException("Session ID is empty");
             }
@@ -45,8 +46,18 @@ public final class RootServerMain {
             );
 
             Object server = serverClass
-                    .getConstructor(Context.class, int.class, String.class)
-                    .newInstance(packageContext, clientUid, sessionId);
+                    .getConstructor(
+                            Context.class,
+                            int.class,
+                            String.class,
+                            String.class
+                    )
+                    .newInstance(
+                            packageContext,
+                            clientUid,
+                            sessionId,
+                            encodedPolicy
+                    );
 
             serverClass.getMethod("start").invoke(server);
 

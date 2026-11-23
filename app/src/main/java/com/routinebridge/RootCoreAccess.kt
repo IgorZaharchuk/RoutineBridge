@@ -1,8 +1,10 @@
 package com.routinebridge
 
+import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import com.routinebridge.rootcore.RootCore
+import com.routinebridge.rootcore.RootCorePolicy
 import com.routinebridge.rootcore.RootCoreSession
 
 internal class RootCoreAccessException(cause: Exception) : IllegalStateException(
@@ -13,9 +15,21 @@ internal class RootCoreAccessException(cause: Exception) : IllegalStateException
 internal object RootCoreAccess {
     private const val TAG = "RoutineBridge"
 
+    private val policy = RootCorePolicy.builder()
+        .allowProviderAuthority(
+            "com.samsung.android.app.routines.externalprovider"
+        )
+        .allowActivity(
+            ComponentName(
+                "com.samsung.android.app.routines",
+                "com.samsung.android.app.routines.ui.shortcut.ShortcutLaunchActivity"
+            )
+        )
+        .build()
+
     fun open(context: Context): RootCoreSession {
         return try {
-            RootCore.open(context.applicationContext)
+            RootCore.open(context.applicationContext, policy)
         } catch (error: Exception) {
             throw RootCoreAccessException(error)
         }

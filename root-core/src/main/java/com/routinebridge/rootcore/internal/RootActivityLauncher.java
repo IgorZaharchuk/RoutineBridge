@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.RemoteException;
 
+import com.routinebridge.rootcore.RootCorePolicy;
+
 import java.util.ArrayList;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -16,7 +18,11 @@ final class RootActivityLauncher {
 
     private RootActivityLauncher() {}
 
-    static void launch(Intent intent, int clientUid) throws RemoteException {
+    static void launch(
+            Intent intent,
+            int clientUid,
+            RootCorePolicy policy
+    ) throws RemoteException {
 
         if (intent == null || intent.getComponent() == null) {
             throw new RemoteException(
@@ -26,35 +32,14 @@ final class RootActivityLauncher {
 
         ComponentName component = intent.getComponent();
 
-        if (!"com.samsung.android.app.routines".equals(
-                component.getPackageName())
-                || !"com.samsung.android.app.routines.ui.shortcut.ShortcutLaunchActivity"
-                .equals(component.getClassName())) {
+        if (!policy.allowsActivity(component)) {
             throw new RemoteException(
                     "Activity component is not allowed: "
                             + component.flattenToShortString()
             );
         }
 
-        if (intent.getAction() != null) {
-            throw new RemoteException("Activity action is not allowed");
-        }
-
-        if (intent.getFlags() != 0x10008000) {
-            throw new RemoteException(
-                    "Activity flags are not allowed: " + intent.getFlags()
-            );
-        }
-
         Bundle extras = intent.getExtras();
-        if (extras == null
-                || extras.size() != 1
-                || !extras.containsKey("EXTRA_KEY_ROUTINE_UUID")
-                || !(extras.get("EXTRA_KEY_ROUTINE_UUID") instanceof Long)) {
-            throw new RemoteException(
-                    "Only the Samsung routine UUID Long extra is allowed"
-            );
-        }
 
         ArrayList<String> command = new ArrayList<>();
         command.add("/system/bin/am");
@@ -72,7 +57,6 @@ final class RootActivityLauncher {
         command.add("-f");
         command.add(String.valueOf(intent.getFlags()));
 
-        Bundle extras = intent.getExtras();
         if (extras != null) {
             for (String key : extras.keySet()) {
                 if (key == null || key.isEmpty()) {

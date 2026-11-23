@@ -11,6 +11,7 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.UserHandle;
 
+import com.routinebridge.rootcore.RootCorePolicy;
 import com.routinebridge.rootcore.ipc.IRootCoreManager;
 
 
@@ -22,6 +23,7 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
     private final Context context;
     private final int clientUid;
     private final String sessionId;
+    private final RootCorePolicy policy;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private IBinder clientToken;
@@ -31,13 +33,19 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
 
     private final Runnable idleShutdown = this::shutdown;
 
-    public RootCoreServer(Context context, int clientUid, String sessionId) {
+    public RootCoreServer(
+            Context context,
+            int clientUid,
+            String sessionId,
+            String encodedPolicy
+    ) {
         if (sessionId == null || sessionId.isEmpty()) {
             throw new IllegalArgumentException("Session ID is empty");
         }
         this.context = context;
         this.clientUid = clientUid;
         this.sessionId = sessionId;
+        this.policy = RootCorePolicy.decode(encodedPolicy);
     }
 
     public void start() {
@@ -100,13 +108,15 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
     @Override
     public Bundle query(String uri, String[] projection) throws RemoteException {
         enforceConnectedClient();
-        return ExternalProviderQuery.query(uri, projection, clientUid);
+        return ExternalProviderQuery.query(
+                uri, projection, clientUid, policy
+        );
     }
 
     @Override
     public void launchActivity(Intent intent) throws RemoteException {
         enforceConnectedClient();
-        RootActivityLauncher.launch(intent, clientUid);
+        RootActivityLauncher.launch(intent, clientUid, policy);
     }
 
     @Override

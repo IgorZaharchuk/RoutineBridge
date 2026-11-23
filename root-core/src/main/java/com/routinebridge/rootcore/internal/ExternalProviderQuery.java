@@ -7,6 +7,8 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteException;
 
+import com.routinebridge.rootcore.RootCorePolicy;
+
 import java.util.ArrayList;
 import java.lang.reflect.Method;
 import java.lang.reflect.InvocationTargetException;
@@ -16,7 +18,12 @@ final class ExternalProviderQuery {
 
     private ExternalProviderQuery() {}
 
-    static Bundle query(String uri, String[] projection, int clientUid) throws RemoteException {
+    static Bundle query(
+            String uri,
+            String[] projection,
+            int clientUid,
+            RootCorePolicy policy
+    ) throws RemoteException {
 
         if (uri == null || uri.trim().isEmpty()) {
             throw new RemoteException("Provider URI is empty");
@@ -29,7 +36,7 @@ final class ExternalProviderQuery {
         }
 
         String authority = parsedUri.getAuthority();
-        if (!"com.samsung.android.app.routines.externalprovider".equals(authority)) {
+        if (authority == null || !policy.allowsProviderAuthority(authority)) {
             throw new RemoteException(
                     "Provider authority is not allowed: " + authority
             );
