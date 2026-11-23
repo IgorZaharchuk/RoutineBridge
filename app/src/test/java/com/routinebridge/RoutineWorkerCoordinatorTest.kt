@@ -172,6 +172,38 @@ class RoutineWorkerCoordinatorTest {
     }
 
     @Test
+    fun `failure before executor starts releases selected command and continues queue`() {
+        val coordinator = RoutineWorkerCoordinator {}
+
+        coordinator.enqueue(
+            10L,
+            BooleanStateTransform.ENABLE,
+            "failed-setup"
+        ) {}
+        coordinator.enqueue(
+            20L,
+            BooleanStateTransform.DISABLE,
+            "next-command"
+        ) {}
+
+        assertNotNull(coordinator.beginNext(10L))
+
+        val released = coordinator.releaseAfterFailure(
+            preserveAttempt = false
+        )
+
+        assertNotNull(released)
+        assertEquals(
+            listOf(
+                RoutineCommandSnapshot(20L, BooleanStateTransform.DISABLE)
+            ),
+            coordinator.pendingSnapshot()
+        )
+        assertEquals(20L, coordinator.nextPendingUuid())
+        assertFalse(coordinator.isWorkerStopped())
+    }
+
+    @Test
     fun `stopped callbacks wait until physical worker stops`() {
         var schedules = 0
         var callbacks = 0

@@ -106,16 +106,15 @@ internal object SamsungRoutineDispatcher {
         var requestId = "not-started"
 
         try {
+            // Move the command to in-flight before any setup that may fail.
+            val start = coordinator.beginNext(uuid) ?: return false
+            requestId = start.requestIds.firstOrNull() ?: "unknown"
+
             val context = appContext
                 ?: throw IllegalStateException("Dispatcher context is unavailable")
 
             val repository = ManualRoutineRepository(context)
             val executor = RoutineActionExecutor(context, repository)
-
-            // Move the selected pending command to in-flight atomically.
-            val start = coordinator.beginNext(uuid) ?: return false
-
-            requestId = start.requestIds.firstOrNull() ?: "unknown"
 
             Log.i(
                 TAG,
