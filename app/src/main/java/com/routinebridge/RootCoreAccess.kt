@@ -40,8 +40,7 @@ internal object RootCoreAccess {
             val session = RootCore.open(context.applicationContext, policy, timeoutMs)
             Log.i(
                 TAG,
-                "ROOT_SESSION_OPEN session=${session.sessionId} " +
-                    "rootPid=${session.rootProcessPid}"
+                "ROOT_SESSION_OPEN session=${session.sessionId}"
             )
             session
         } catch (error: Exception) {
@@ -60,11 +59,10 @@ internal object RootCoreAccess {
     fun close(session: RootCoreSession) {
         try {
             val sessionId = session.sessionId
-            val rootPid = session.rootProcessPid
 
             Log.i(
                 TAG,
-                "ROOT_SESSION_CLOSE_BEGIN session=$sessionId rootPid=$rootPid"
+                "ROOT_SESSION_CLOSE_BEGIN session=$sessionId"
             )
 
             session.close()
@@ -72,8 +70,7 @@ internal object RootCoreAccess {
 
             Log.i(
                 TAG,
-                "ROOT_SESSION_CLOSED session=$sessionId " +
-                    "rootPid=$rootPid terminated=$terminated"
+                "ROOT_SESSION_CLOSED session=$sessionId terminated=$terminated"
             )
 
             if (!terminated) {
