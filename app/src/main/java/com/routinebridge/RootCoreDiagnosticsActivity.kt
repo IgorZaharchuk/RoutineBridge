@@ -556,8 +556,15 @@ class RootCoreDiagnosticsActivity : Activity() {
         report.add(getString(R.string.diagnostics_dispatcher_mode))
         report.add(getString(R.string.diagnostics_dispatcher_selected, selected.joinToString { it.name }))
 
+        val initialSession = RootCoreAccess.open(applicationContext)
+        val initialRoutines = try {
+            repository.load(initialSession)
+        } finally {
+            RootCoreAccess.close(initialSession)
+        }
+
         val ready = selected.mapIndexed { index, chosen ->
-            val current = repository.load().firstOrNull {
+            val current = initialRoutines.firstOrNull {
                 it.uuid == chosen.uuid
             } ?: error(getString(R.string.diagnostics_routine_disappeared, label, index + 1))
 
@@ -618,8 +625,15 @@ class RootCoreDiagnosticsActivity : Activity() {
 
         report.add("TEST_BATCH_DRAINED size=${requests.size}")
 
+        val verificationSession = RootCoreAccess.open(applicationContext)
+        val verifiedRoutines = try {
+            repository.load(verificationSession)
+        } finally {
+            RootCoreAccess.close(verificationSession)
+        }
+
         ready.forEachIndexed { index, (routine, initialRunning) ->
-            val confirmed = repository.load().firstOrNull {
+            val confirmed = verifiedRoutines.firstOrNull {
                 it.uuid == routine.uuid
             } ?: error(getString(R.string.diagnostics_routine_disappeared_after, label, index + 1))
 

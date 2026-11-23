@@ -19,7 +19,10 @@ import com.routinebridge.rootcore.ipc.IRootCoreManager;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -346,10 +349,28 @@ public final class RootCoreSession implements AutoCloseable {
         }
 
         File target = new File(directory, "main.jar");
+
+        byte[] assetHash;
+        try (InputStream input = context.getAssets().open("main.jar")) {
+            assetHash = sha256(input);
+        }
+
+        if (target.isFile()) {
+            try (InputStream input = new java.io.FileInputStream(target)) {
+                if (MessageDigest.isEqual(assetHash, sha256(input))) {
+                    return target;
+                }
+            }
+        }
+
+        if (target.exists() && !target.delete()) {
+            throw new IOException("Cannot replace outdated Root Core bootstrap asset");
+        }
+
         File temporary = File.createTempFile("main-", ".jar.tmp", directory);
 
         try {
-            try (java.io.InputStream input = context.getAssets().open("main.jar");
+            try (InputStream input = context.getAssets().open("main.jar");
                  FileOutputStream output = new FileOutputStream(temporary)) {
                 byte[] buffer = new byte[8192];
                 int count;
@@ -368,6 +389,22 @@ public final class RootCoreSession implements AutoCloseable {
             if (temporary.exists()) {
                 temporary.delete();
             }
+        }
+    }
+
+    private static byte[] sha256(InputStream input) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            int count;
+
+            while ((count = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, count);
+            }
+
+            return digest.digest();
+        } catch (NoSuchAlgorithmException error) {
+            throw new AssertionError("SHA-256 is unavailable", error);
         }
     }
 
