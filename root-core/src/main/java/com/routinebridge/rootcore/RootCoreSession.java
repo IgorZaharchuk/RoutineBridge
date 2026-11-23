@@ -91,12 +91,18 @@ public final class RootCoreSession implements AutoCloseable {
 
                 if (Build.VERSION.SDK_INT >= 34) {
                     int senderUid = getSentFromUid();
-                    if (senderUid != 0) {
+                    if (senderUid != 0 && senderUid != Process.INVALID_UID) {
                         android.util.Log.w(
                                 "RoutineBridgeRootCore",
                                 "Ignoring Binder broadcast from UID " + senderUid
                         );
                         return;
+                    }
+                    if (senderUid == Process.INVALID_UID) {
+                        android.util.Log.w(
+                                "RoutineBridgeRootCore",
+                                "Sender UID unavailable; verifying Binder identity"
+                        );
                     }
                 }
 
