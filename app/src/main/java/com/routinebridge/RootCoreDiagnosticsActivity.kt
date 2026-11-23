@@ -17,7 +17,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import com.routinebridge.rootcore.RootCore
 import com.routinebridge.rootcore.RootCoreSession
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -85,7 +84,7 @@ class RootCoreDiagnosticsActivity : Activity() {
             runTest(getString(R.string.diagnostics_test_open_session)) {
                 check(session == null) { getString(R.string.diagnostics_session_already_open) }
                 val start = SystemClock.elapsedRealtime()
-                session = RootCore.open(this, 30_000L)
+                session = RootCoreAccess.open(this, 30_000L)
                 getString(R.string.diagnostics_binder_ready, SystemClock.elapsedRealtime() - start)
             }
         }
