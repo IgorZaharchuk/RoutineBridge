@@ -182,19 +182,81 @@ final class ExternalProviderQuery {
             cursor = (Cursor) result;
 
             String[] columns = cursor.getColumnNames();
+
+            if (columns.length > MAX_RESULT_COLUMNS) {
+                throw new RemoteException(
+                        "Provider result contains too many columns: " + columns.length
+                );
+            }
+
+            long estimatedResultBytes = 0L;
+
+            for (String column : columns) {
+                if (column == null) {
+                    throw new RemoteException(
+                            "Provider result contains a null column name"
+                    );
+                }
+
+                estimatedResultBytes += 16L + column.length() * 3L;
+
+                if (estimatedResultBytes > MAX_RESULT_BYTES) {
+                    throw new RemoteException(
+                            "Provider result exceeds the maximum result size"
+                    );
+                }
+            }
+
             Bundle response = new Bundle();
             response.putStringArray("columns", columns);
 
             ArrayList<Bundle> rows = new ArrayList<>();
 
             while (cursor.moveToNext()) {
+                if (rows.size() >= MAX_RESULT_ROWS) {
+                    throw new RemoteException(
+                            "Provider result contains too many rows: "
+                                    + (rows.size() + 1)
+                    );
+                }
+
+                long nextCellCount =
+                        (long) (rows.size() + 1) * columns.length;
+
+                if (nextCellCount > MAX_RESULT_CELLS) {
+                    throw new RemoteException(
+                            "Provider result contains too many cells"
+                    );
+                }
+
+                estimatedResultBytes += 64L + columns.length * 16L;
+
+                if (estimatedResultBytes > MAX_RESULT_BYTES) {
+                    throw new RemoteException(
+                            "Provider result exceeds the maximum result size"
+                    );
+                }
+
                 Bundle row = new Bundle();
 
                 for (int i = 0; i < columns.length; i++) {
-                    row.putString(
-                            "c" + i,
-                            cursor.isNull(i) ? null : cursor.getString(i)
-                    );
+                    String value = cursor.isNull(i)
+                            ? null
+                            : cursor.getString(i);
+
+                    if (value != null) {
+                        estimatedResultBytes += value.length() * 3L;
+                    }
+
+                    estimatedResultBytes += 16L;
+
+                    if (estimatedResultBytes > MAX_RESULT_BYTES) {
+                        throw new RemoteException(
+                                "Provider result exceeds the maximum result size"
+                        );
+                    }
+
+                    row.putString("c" + i, value);
                 }
 
                 rows.add(row);
@@ -291,6 +353,11 @@ final class ExternalProviderQuery {
     private static final int MAX_QUERY_LENGTH = 2048;
     private static final int MAX_PROJECTION_COLUMNS = 64;
     private static final int MAX_COLUMN_NAME_LENGTH = 128;
+
+    private static final int MAX_RESULT_COLUMNS = 64;
+    private static final int MAX_RESULT_ROWS = 1000;
+    private static final int MAX_RESULT_CELLS = 10_000;
+    private static final long MAX_RESULT_BYTES = 256L * 1024L;
 
     private static void validateProjection(String[] projection)
             throws RemoteException {
