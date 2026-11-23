@@ -174,4 +174,13 @@ Request: %4$s</string>
     <string name="diagnostics_logcat_empty">No entries found for the RoutineBridge tag.</string>
     <string name="diagnostics_logcat_denied">LOGCAT_UNAVAILABLE: access denied: %1$s</string>
     <string name="diagnostics_logcat_error">LOGCAT_UNAVAILABLE: %1$s: %2$s</string>
+
+    <string name="application_log_title">Application log</string>
+    <string name="application_log_copy">Copy entire log</string>
+    <string name="application_log_copied">Application log copied</string>
+    <string name="application_log_loading">Loading application log…</string>
+    <string name="application_log_empty">No application log entries found.</string>
+    <string name="application_log_exit_error">LOGCAT_UNAVAILABLE: logcat exited with code %1$d
+%2$s</string>
+    <string name="application_log_error">LOGCAT_UNAVAILABLE: %1$s: %2$s</string>
 </resources>

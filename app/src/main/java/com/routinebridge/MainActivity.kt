@@ -186,9 +186,9 @@ class MainActivity : Activity() {
         )
         content.addView(button(getString(R.string.refresh_routines)) { refreshRoutines() }, matchWrap().apply { bottomMargin = dp(8) })
         content.addView(
-            button(getString(R.string.diagnostics_title)) {
+            button(getString(R.string.application_log_title)) {
                 startActivity(
-                    Intent(this, RootCoreDiagnosticsActivity::class.java)
+                    Intent(this, ApplicationLogActivity::class.java)
                 )
             },
             matchWrap().apply { bottomMargin = dp(8) }

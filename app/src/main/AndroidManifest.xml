@@ -33,6 +33,12 @@
             android:theme="@style/AppTheme" />
 
         <activity
+            android:name=".ApplicationLogActivity"
+            android:exported="false"
+            android:label="@string/application_log_title"
+            android:theme="@style/AppTheme" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop">
