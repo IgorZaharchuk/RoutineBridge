@@ -355,33 +355,6 @@ class RoutineCommandQueueTest {
     }
 
     @Test
-    fun `newer pending revision survives an older failure`() {
-        val queue = RoutineCommandQueue()
-        queue.enqueue(10L, BooleanStateTransform.ENABLE)
-
-        val oldToken = queue.pendingToken(10L)!!
-        queue.enqueue(10L, BooleanStateTransform.TOGGLE)
-
-        assertFalse(queue.discardPending(oldToken))
-        assertEquals(
-            listOf(RoutineCommandSnapshot(10L, BooleanStateTransform.DISABLE)),
-            queue.pendingSnapshot()
-        )
-    }
-
-    @Test
-    fun `matching pending revision can be discarded`() {
-        val queue = RoutineCommandQueue()
-        queue.enqueue(10L, BooleanStateTransform.ENABLE)
-
-        val token = queue.pendingToken(10L)!!
-
-        assertTrue(queue.discardPending(token))
-        assertTrue(queue.pendingSnapshot().isEmpty())
-    }
-
-
-    @Test
     fun `pending coalescing keeps all source request IDs`() {
         val queue = RoutineCommandQueue()
 

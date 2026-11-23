@@ -7,11 +7,6 @@ internal data class RoutineCommandSnapshot(
     val transform: BooleanStateTransform
 )
 
-internal data class RoutinePendingToken(
-    val routineUuid: Long,
-    val revision: Long
-)
-
 internal data class RoutineEnqueueResult(
     val cancelledRequestIds: List<String>
 )
@@ -20,7 +15,6 @@ internal class RoutineCommandQueue {
 
     private data class Pending(
         val transform: BooleanStateTransform,
-        val revision: Long,
         val requestIds: List<String>
     )
 
@@ -47,8 +41,6 @@ internal class RoutineCommandQueue {
 
     private val pending = LinkedHashMap<Long, Pending>()
     private var inFlight: InFlight? = null
-    private var nextRevision = 0L
-
     @Synchronized
     fun enqueue(
         routineUuid: Long,
@@ -97,7 +89,7 @@ internal class RoutineCommandQueue {
             return combinedIds
         }
 
-        val entry = Pending(combined, ++nextRevision, combinedIds)
+        val entry = Pending(combined, combinedIds)
         if (!atFront || pending.isEmpty()) {
             pending[routineUuid] = entry
             return emptyList()
@@ -119,20 +111,6 @@ internal class RoutineCommandQueue {
 
     @Synchronized
     fun nextPendingUuid(): Long? = pending.keys.firstOrNull()
-
-    @Synchronized
-    fun pendingToken(routineUuid: Long): RoutinePendingToken? {
-        val entry = pending[routineUuid] ?: return null
-        return RoutinePendingToken(routineUuid, entry.revision)
-    }
-
-    @Synchronized
-    fun discardPending(token: RoutinePendingToken): Boolean {
-        val current = pending[token.routineUuid] ?: return false
-        if (current.revision != token.revision) return false
-        pending.remove(token.routineUuid)
-        return true
-    }
 
     @Synchronized
     fun beginNext(

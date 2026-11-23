@@ -55,28 +55,6 @@ internal class RoutineWorkerCoordinator(
         result
     }
 
-    fun enqueueBatch(
-        commands: List<RoutineWorkerEnqueue>,
-        onWorkerStopped: () -> Unit
-    ): List<RoutineEnqueueResult> = synchronized(schedulingLock) {
-        require(commands.isNotEmpty()) { "Command batch must not be empty" }
-        stoppedCallbacks.add(onWorkerStopped)
-
-        val results = commands.map { command ->
-            queue.enqueue(
-                routineUuid = command.routineUuid,
-                transform = command.transform,
-                requestId = command.requestId
-            )
-        }
-
-        if (!workerScheduled) {
-            workerScheduled = true
-            scheduleWorker()
-        }
-        results
-    }
-
     fun nextPendingUuid(): Long? = synchronized(schedulingLock) {
         queue.nextPendingUuid()
     }
@@ -177,12 +155,6 @@ internal class RoutineWorkerCoordinator(
             queue.pendingRequestIds(routineUuid)
         }
 }
-
-internal data class RoutineWorkerEnqueue(
-    val routineUuid: Long,
-    val transform: BooleanStateTransform,
-    val requestId: String
-)
 
 internal data class RoutineWorkerStart(
     val command: RoutineCommandSnapshot,

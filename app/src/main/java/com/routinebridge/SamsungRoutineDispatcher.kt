@@ -68,43 +68,6 @@ internal object SamsungRoutineDispatcher {
         )
     }
 
-    fun enqueueBatch(
-        context: Context,
-        requests: List<RoutineDispatchRequest>,
-        onQueueDrained: () -> Unit
-    ) {
-        require(requests.isNotEmpty()) { "Dispatch batch must not be empty" }
-        appContext = context.applicationContext
-
-        val results = coordinator.enqueueBatch(
-            commands = requests.map { request ->
-                RoutineWorkerEnqueue(
-                    routineUuid = request.input.routineUuid,
-                    transform = BooleanStateTransform.from(request.input.action),
-                    requestId = request.requestId
-                )
-            },
-            onWorkerStopped = onQueueDrained
-        )
-
-        requests.forEachIndexed { index, request ->
-            val cancelled = results[index].cancelledRequestIds
-            if (cancelled.isNotEmpty()) {
-                Log.i(
-                    TAG,
-                    "DISPATCH_COALESCED_CANCELLED uuid=${request.input.routineUuid} " +
-                        "requests=${cancelled.joinToString(",")}"
-                )
-            }
-            Log.i(
-                TAG,
-                "DISPATCH_BATCH_ENQUEUED request=${request.requestId} " +
-                    "uuid=${request.input.routineUuid} action=${request.input.action}"
-            )
-        }
-        Log.i(TAG, "DISPATCH_BATCH_READY size=${requests.size}")
-    }
-
     private fun drainQueue() {
         var session: RootCoreSession? = null
         Log.i(TAG, "WORKER_CYCLE_START")
@@ -336,7 +299,3 @@ internal object SamsungRoutineDispatcher {
     }
 }
 
-internal data class RoutineDispatchRequest(
-    val input: RoutineInput,
-    val requestId: String
-)
