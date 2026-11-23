@@ -23,11 +23,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '8.11.1'
+      - name: Set up Gradle Wrapper
+        run: chmod +x gradlew
 
       - name: Prepare signing keystore
         env:
@@ -37,7 +36,7 @@ jobs:
           test -s "$RUNNER_TEMP/routinebridge-release.jks"
 
       - name: Run experimental unit tests
-        run: gradle testExperimentalUnitTest
+        run: ./gradlew testExperimentalUnitTest
 
       - name: Build APK
         env:
@@ -47,9 +46,9 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
-            gradle assembleRelease
+            ./gradlew assembleRelease
           else
-            gradle assembleExperimental
+            ./gradlew assembleExperimental
           fi
 
       - name: Upload Release APK
