@@ -23,7 +23,13 @@ import java.io.InputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -40,6 +46,8 @@ public final class RootCoreSession implements AutoCloseable {
     private final IBinder.DeathRecipient deathRecipient;
 
     private volatile boolean closed;
+    private volatile boolean unusable;
+    private final ExecutorService binderExecutor;
 
     private RootCoreSession(
             Context context,
@@ -57,6 +65,11 @@ public final class RootCoreSession implements AutoCloseable {
         this.remote = remote;
         this.localToken = localToken;
         this.deathRecipient = deathRecipient;
+        this.binderExecutor = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "RootCoreSession-" + sessionId);
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     static RootCoreSession open(
@@ -247,15 +260,19 @@ public final class RootCoreSession implements AutoCloseable {
         }
     }
 
+    private static final long BINDER_CALL_TIMEOUT_MS = 10_000L;
+
     public int ping() throws RemoteException {
-        ensureOpen();
-        return remote.ping();
+        return callRemote("ping", () -> remote.ping());
     }
 
     public Bundle queryProvider(Uri uri, String[] projection) throws RemoteException {
-        ensureOpen();
         if (uri == null) throw new IllegalArgumentException("URI is null");
-        Bundle result = remote.query(uri.toString(), projection);
+
+        Bundle result = callRemote(
+                "queryProvider",
+                () -> remote.query(uri.toString(), projection)
+        );
         if (result == null) {
             throw new RemoteException(
                     "Root Core server returned a null Bundle for Provider query"
@@ -270,8 +287,6 @@ public final class RootCoreSession implements AutoCloseable {
             Bundle extras,
             int flags
     ) throws RemoteException {
-        ensureOpen();
-
         if (component == null) {
             throw new IllegalArgumentException("Explicit Activity component is required");
         }
@@ -282,11 +297,71 @@ public final class RootCoreSession implements AutoCloseable {
         intent.addFlags(flags);
         if (extras != null) intent.putExtras(extras);
 
-        remote.launchActivity(intent);
+        callRemote("launchActivity", () -> {
+            remote.launchActivity(intent);
+            return null;
+        });
+    }
+
+    private synchronized <T> T callRemote(
+            String operation,
+            Callable<T> call
+    ) throws RemoteException {
+        ensureOpen();
+
+        Future<T> future;
+        try {
+            future = binderExecutor.submit(call);
+        } catch (RejectedExecutionException error) {
+            unusable = true;
+            throw new RemoteException(
+                    "Root Core executor is unavailable: " + operation,
+                    error
+            );
+        }
+
+        try {
+            return future.get(BINDER_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException error) {
+            unusable = true;
+            future.cancel(true);
+            throw new RemoteException(
+                    "Root Core Binder call timed out after "
+                            + BINDER_CALL_TIMEOUT_MS + " ms: " + operation
+            );
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new RemoteException(
+                    "Interrupted while waiting for Root Core Binder: " + operation,
+                    error
+            );
+        } catch (ExecutionException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof RemoteException) {
+                throw (RemoteException) cause;
+            }
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
+            }
+            if (cause instanceof Error) {
+                throw (Error) cause;
+            }
+            throw new RemoteException(
+                    "Root Core Binder call failed: " + operation,
+                    cause
+            );
+        }
     }
 
     private void ensureOpen() {
-        if (closed) throw new IllegalStateException("Root Core session is closed");
+        if (closed) {
+            throw new IllegalStateException("Root Core session is closed");
+        }
+        if (unusable) {
+            throw new IllegalStateException(
+                    "Root Core session is unusable after a Binder timeout"
+            );
+        }
     }
 
     @Override
@@ -294,10 +369,18 @@ public final class RootCoreSession implements AutoCloseable {
         if (closed) return;
         closed = true;
 
-        try {
-            remote.close();
-        } catch (Throwable ignored) {
+        if (!unusable) {
+            try {
+                binderExecutor.execute(() -> {
+                    try {
+                        remote.close();
+                    } catch (Throwable ignored) {
+                    }
+                });
+            } catch (RejectedExecutionException ignored) {
+            }
         }
+        binderExecutor.shutdown();
 
         try {
             if (deathRecipient != null) {
