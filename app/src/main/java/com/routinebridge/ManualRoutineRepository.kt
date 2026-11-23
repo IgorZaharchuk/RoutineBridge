@@ -52,6 +52,7 @@ class ManualRoutineRepository(
         return rows.mapIndexed { index, row ->
             val uuid = row.getString("c$uuidIndex")
                 ?.toLongOrNull()
+                ?.takeIf { it > 0L }
                 ?: throw IllegalStateException(
                     messages.getString(R.string.provider_invalid_uuid, index + 1)
                 )

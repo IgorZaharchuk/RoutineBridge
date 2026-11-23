@@ -54,7 +54,7 @@ class SamsungRoutineService : Service() {
 
             require(!id.isNullOrBlank())
             require(!label.isNullOrBlank())
-            require(routineUuid != Long.MIN_VALUE)
+            require(routineUuid > 0L)
             require(!routineName.isNullOrBlank())
             require(!requestId.isNullOrBlank())
 

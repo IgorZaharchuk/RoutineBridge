@@ -34,7 +34,7 @@ class RoutineInputStore(context: Context) {
                         is Int -> uuidValue.toLong()
                         is Long -> uuidValue
                         else -> throw IllegalArgumentException(messages.getString(R.string.store_uuid_not_integer))
-                    }
+                    }.also { require(it > 0L) }
                 } catch (e: Exception) {
                     throw IllegalStateException(messages.getString(R.string.store_invalid_uuid), e)
                 }
