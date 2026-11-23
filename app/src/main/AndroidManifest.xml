@@ -27,12 +27,6 @@
             android:theme="@style/ShortcutRunTheme" />
 
         <activity
-            android:name=".RootCoreDiagnosticsActivity"
-            android:exported="false"
-            android:label="@string/diagnostics_title"
-            android:theme="@style/AppTheme" />
-
-        <activity
             android:name=".ApplicationLogActivity"
             android:exported="false"
             android:label="@string/application_log_title"
