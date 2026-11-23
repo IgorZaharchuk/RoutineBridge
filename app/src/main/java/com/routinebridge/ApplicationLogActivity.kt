@@ -81,17 +81,31 @@ class ApplicationLogActivity : Activity() {
         )
         root.addView(header, matchWrap())
 
-        root.addView(
-            text(getString(R.string.application_log_title), 18f, white, true).apply {
-                setPadding(0, dp(10), 0, dp(10))
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        actions.addView(
+            button(getString(R.string.application_log_refresh)) {
+                loadJournal()
             },
-            matchWrap()
+            LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                marginEnd = dp(6)
+            }
         )
 
-        root.addView(
+        actions.addView(
             button(getString(R.string.application_log_copy)) {
                 copyJournal()
             },
+            LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                marginStart = dp(6)
+            }
+        )
+
+        root.addView(
+            actions,
             LinearLayout.LayoutParams(-1, dp(48)).apply {
                 bottomMargin = dp(10)
             }

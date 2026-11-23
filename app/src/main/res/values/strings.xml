@@ -86,6 +86,7 @@
 
     <string name="application_log_title">Application log</string>
     <string name="application_log_copy">Copy entire log</string>
+    <string name="application_log_refresh">Refresh log</string>
     <string name="application_log_copied">Application log copied</string>
     <string name="application_log_loading">Loading application log…</string>
     <string name="application_log_empty">No application log entries found.</string>

@@ -88,6 +88,7 @@
 
     <string name="application_log_title">Журнал приложения</string>
     <string name="application_log_copy">Скопировать весь журнал</string>
+    <string name="application_log_refresh">Обновить журнал</string>
     <string name="application_log_copied">Журнал приложения скопирован</string>
     <string name="application_log_loading">Загрузка журнала приложения…</string>
     <string name="application_log_empty">Записей журнала приложения нет.</string>
