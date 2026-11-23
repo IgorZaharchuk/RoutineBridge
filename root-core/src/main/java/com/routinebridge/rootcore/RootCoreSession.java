@@ -30,6 +30,7 @@ public final class RootCoreSession implements AutoCloseable {
 
     private final Context context;
     private final java.lang.Process rootProcess;
+    private final String sessionId;
     private final BroadcastReceiver receiver;
     private final IRootCoreManager remote;
     private final IBinder localToken;
@@ -40,6 +41,7 @@ public final class RootCoreSession implements AutoCloseable {
     private RootCoreSession(
             Context context,
             java.lang.Process rootProcess,
+            String sessionId,
             BroadcastReceiver receiver,
             IRootCoreManager remote,
             IBinder localToken,
@@ -47,6 +49,7 @@ public final class RootCoreSession implements AutoCloseable {
     ) {
         this.context = context;
         this.rootProcess = rootProcess;
+        this.sessionId = sessionId;
         this.receiver = receiver;
         this.remote = remote;
         this.localToken = localToken;
@@ -229,7 +232,7 @@ public final class RootCoreSession implements AutoCloseable {
             }
 
             return new RootCoreSession(
-                    context, process, receiver, manager, token, death
+                    context, process, sessionId, receiver, manager, token, death
             );
         } catch (Throwable error) {
             try {
@@ -315,6 +318,14 @@ public final class RootCoreSession implements AutoCloseable {
 
     public boolean isRootProcessAlive() {
         return rootProcess.isAlive();
+    }
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public long getRootProcessPid() {
+        return rootProcess.pid();
     }
 
     private static void terminateProcess(java.lang.Process process) {

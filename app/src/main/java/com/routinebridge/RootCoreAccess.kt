@@ -37,7 +37,13 @@ internal object RootCoreAccess {
         timeoutMs: Long = 15_000L
     ): RootCoreSession {
         return try {
-            RootCore.open(context.applicationContext, policy, timeoutMs)
+            val session = RootCore.open(context.applicationContext, policy, timeoutMs)
+            Log.i(
+                TAG,
+                "ROOT_SESSION_OPEN session=${session.sessionId} " +
+                    "rootPid=${session.rootProcessPid}"
+            )
+            session
         } catch (error: Exception) {
             throw RootCoreAccessException(error)
         }
@@ -53,9 +59,24 @@ internal object RootCoreAccess {
 
     fun close(session: RootCoreSession) {
         try {
-            session.close()
+            val sessionId = session.sessionId
+            val rootPid = session.rootProcessPid
 
-            if (!session.awaitTermination(2_000L)) {
+            Log.i(
+                TAG,
+                "ROOT_SESSION_CLOSE_BEGIN session=$sessionId rootPid=$rootPid"
+            )
+
+            session.close()
+            val terminated = session.awaitTermination(2_000L)
+
+            Log.i(
+                TAG,
+                "ROOT_SESSION_CLOSED session=$sessionId " +
+                    "rootPid=$rootPid terminated=$terminated"
+            )
+
+            if (!terminated) {
                 Log.w(TAG, "Root Core process did not terminate within 2 seconds")
             }
         } catch (error: InterruptedException) {

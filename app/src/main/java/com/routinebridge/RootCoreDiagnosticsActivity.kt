@@ -556,7 +556,7 @@ class RootCoreDiagnosticsActivity : Activity() {
         report.add(getString(R.string.diagnostics_dispatcher_mode))
         report.add(getString(R.string.diagnostics_dispatcher_selected, selected.joinToString { it.name }))
 
-        for ((index, chosen) in selected.withIndex()) {
+        val ready = selected.mapIndexed { index, chosen ->
             val current = repository.load().firstOrNull {
                 it.uuid == chosen.uuid
             } ?: error(getString(R.string.diagnostics_routine_disappeared, label, index + 1))
@@ -564,44 +564,63 @@ class RootCoreDiagnosticsActivity : Activity() {
             check(current.isEnabled == true) {
                 getString(R.string.diagnostics_routine_disabled, label, index + 1, current.name)
             }
+
             val initialRunning = current.isRunning
             if (initialRunning == null) {
-                report.add(
+                error(
                     "${label}${index + 1}: UNKNOWN '${current.name}', " +
                         getString(R.string.diagnostics_provider_state_unknown)
                 )
-                report.add(getString(R.string.diagnostics_state_unknown_result))
-                return report.joinToString("\n")
             }
 
             report.add(
                 getString(R.string.diagnostics_routine_ready, label, index + 1, current.name, initialRunning)
             )
+            current to initialRunning
+        }
 
-            val latch = CountDownLatch(1)
-            val requestId = UUID.randomUUID().toString()
-
-            SamsungRoutineDispatcher.enqueue(
-                context = applicationContext,
+        val requests = ready.map { (routine, _) ->
+            RoutineDispatchRequest(
                 input = RoutineInput(
                     id = UUID.randomUUID().toString(),
                     label = "Root Core diagnostics",
-                    routineUuid = current.uuid,
-                    routineName = current.name,
+                    routineUuid = routine.uuid,
+                    routineName = routine.name,
                     action = RoutineInputAction.ENABLE
                 ),
-                requestId = requestId,
-                onQueueDrained = { latch.countDown() }
+                requestId = UUID.randomUUID().toString()
             )
+        }
 
-            report.add(getString(R.string.diagnostics_routine_enqueued, label, index + 1, current.uuid))
+        val latch = CountDownLatch(1)
+        report.add("TEST_BATCH_ENQUEUE size=${requests.size}")
 
-            check(latch.await(15, TimeUnit.SECONDS)) {
-                getString(R.string.diagnostics_dispatcher_timeout, label, index + 1)
-            }
+        SamsungRoutineDispatcher.enqueueBatch(
+            context = applicationContext,
+            requests = requests,
+            onQueueDrained = { latch.countDown() }
+        )
 
+        requests.forEachIndexed { index, request ->
+            report.add(
+                getString(
+                    R.string.diagnostics_routine_enqueued,
+                    label,
+                    index + 1,
+                    request.input.routineUuid
+                )
+            )
+        }
+
+        check(latch.await(45, TimeUnit.SECONDS)) {
+            getString(R.string.diagnostics_dispatcher_timeout, label, selected.size)
+        }
+
+        report.add("TEST_BATCH_DRAINED size=${requests.size}")
+
+        ready.forEachIndexed { index, (routine, initialRunning) ->
             val confirmed = repository.load().firstOrNull {
-                it.uuid == current.uuid
+                it.uuid == routine.uuid
             } ?: error(getString(R.string.diagnostics_routine_disappeared_after, label, index + 1))
 
             check(confirmed.isRunning == true) {

@@ -67,8 +67,46 @@ internal object SamsungRoutineDispatcher {
         )
     }
 
+    fun enqueueBatch(
+        context: Context,
+        requests: List<RoutineDispatchRequest>,
+        onQueueDrained: () -> Unit
+    ) {
+        require(requests.isNotEmpty()) { "Dispatch batch must not be empty" }
+        appContext = context.applicationContext
+
+        val results = coordinator.enqueueBatch(
+            commands = requests.map { request ->
+                RoutineWorkerEnqueue(
+                    routineUuid = request.input.routineUuid,
+                    transform = BooleanStateTransform.from(request.input.action),
+                    requestId = request.requestId
+                )
+            },
+            onWorkerStopped = onQueueDrained
+        )
+
+        requests.forEachIndexed { index, request ->
+            val cancelled = results[index].cancelledRequestIds
+            if (cancelled.isNotEmpty()) {
+                Log.i(
+                    TAG,
+                    "DISPATCH_COALESCED_CANCELLED uuid=${request.input.routineUuid} " +
+                        "requests=${cancelled.joinToString(",")}"
+                )
+            }
+            Log.i(
+                TAG,
+                "DISPATCH_BATCH_ENQUEUED request=${request.requestId} " +
+                    "uuid=${request.input.routineUuid} action=${request.input.action}"
+            )
+        }
+        Log.i(TAG, "DISPATCH_BATCH_READY size=${requests.size}")
+    }
+
     private fun drainQueue() {
         var session: RootCoreSession? = null
+        Log.i(TAG, "WORKER_CYCLE_START")
 
         try {
             while (true) {
@@ -76,6 +114,7 @@ internal object SamsungRoutineDispatcher {
 
                 if (uuid == null) {
                     if (coordinator.stopIfNoPending()) {
+                        Log.i(TAG, "WORKER_QUEUE_EMPTY")
                         break
                     }
                     continue
@@ -101,8 +140,9 @@ internal object SamsungRoutineDispatcher {
                 }
             }
         } finally {
-            // Close RootCore before notifying the Service that the worker stopped.
+            // Close Root Core only after the active queue cycle has finished.
             session?.let(RootCoreAccess::close)
+            Log.i(TAG, "WORKER_CYCLE_STOPPED")
             notifyWorkerStopped()
         }
     }
@@ -146,7 +186,8 @@ internal object SamsungRoutineDispatcher {
                 TAG,
                 "DISPATCH_START request=$requestId " +
                     "related=${start.requestIds.drop(1).joinToString(",")} " +
-                    "uuid=$uuid transform=${start.command.transform}"
+                    "uuid=$uuid transform=${start.command.transform} " +
+                    "rootSession=${session.sessionId} rootPid=${session.rootProcessPid}"
             )
 
             while (true) {
@@ -265,3 +306,8 @@ internal object SamsungRoutineDispatcher {
         }
     }
 }
+
+internal data class RoutineDispatchRequest(
+    val input: RoutineInput,
+    val requestId: String
+)
