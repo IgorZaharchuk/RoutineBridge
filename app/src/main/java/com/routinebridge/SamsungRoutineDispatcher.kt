@@ -218,13 +218,16 @@ internal object SamsungRoutineDispatcher {
                     }
 
                     RoutineExecutionStatus.TIMEOUT -> {
+                        val failedRequestIds = coordinator.inFlightRequestIds()
+                        val failedRequestId = failedRequestIds.firstOrNull() ?: requestId
                         coordinator.releaseAfterFailure(confirmedAttempt)
 
                         Log.w(
                             TAG,
-                            "DISPATCH_TIMEOUT request=$requestId uuid=$uuid " +
-                                "target=${result.targetState} actual=${result.actualState} " +
-                                "deferred=$confirmedAttempt"
+                            "DISPATCH_TIMEOUT request=$failedRequestId " +
+                                "related=${failedRequestIds.drop(1).joinToString(",")} " +
+                                "uuid=$uuid target=${result.targetState} " +
+                                "actual=${result.actualState} deferred=$confirmedAttempt"
                         )
 
                         return confirmedAttempt
@@ -277,13 +280,16 @@ internal object SamsungRoutineDispatcher {
                 }
             }
 
+            val failedRequestIds = coordinator.inFlightRequestIds()
+            val failedRequestId = failedRequestIds.firstOrNull() ?: requestId
             val released = coordinator.releaseAfterFailure(confirmedAttempt)
 
             Log.e(
                 TAG,
-                "DISPATCH_FAILED request=$requestId uuid=$uuid " +
-                    "released=${released != null} deferred=$confirmedAttempt " +
-                    "error=${error.message}",
+                "DISPATCH_FAILED request=$failedRequestId " +
+                    "related=${failedRequestIds.drop(1).joinToString(",")} " +
+                    "uuid=$uuid released=${released != null} " +
+                    "deferred=$confirmedAttempt error=${error.message}",
                 error
             )
 

@@ -16,7 +16,7 @@ class ShortcutRunActivity : Activity() {
         super.onCreate(savedInstanceState)
         val requestId = intent?.getStringExtra(EXTRA_REQUEST_ID)
             ?.takeIf { it.isNotBlank() }
-            ?: UUID.randomUUID().toString().take(8)
+            ?: UUID.randomUUID().toString()
 
         intent?.putExtra(EXTRA_REQUEST_ID, requestId)
 
@@ -27,7 +27,7 @@ class ShortcutRunActivity : Activity() {
                 "inputId=${intent?.getStringExtra(MainActivity.EXTRA_INPUT_ID)} " +
                 "component=${intent?.component?.flattenToShortString()}"
         )
-        enqueueInput(intent)
+        enqueueInput(intent, requestId)
     }
 
     private fun openMainActivityWithError(message: String) {
@@ -40,16 +40,12 @@ class ShortcutRunActivity : Activity() {
         finish()
     }
 
-    private fun enqueueInput(intent: Intent?) {
+    private fun enqueueInput(intent: Intent?, requestId: String) {
         if (intent?.action != MainActivity.ACTION_RUN_INPUT) {
             Log.e(LOG_TAG, "SHORTCUT_INTENT_REJECTED action=${intent?.action}")
             finish()
             return
         }
-
-        val requestId = intent.getStringExtra(EXTRA_REQUEST_ID)
-            ?.takeIf { it.isNotBlank() }
-            ?: UUID.randomUUID().toString().take(8)
 
         val id = intent.getStringExtra(MainActivity.EXTRA_INPUT_ID)
         if (id == null) {

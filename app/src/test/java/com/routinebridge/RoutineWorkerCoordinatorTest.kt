@@ -86,6 +86,7 @@ class RoutineWorkerCoordinatorTest {
             ),
             coordinator.pendingSnapshot()
         )
+        assertEquals(listOf("followup"), coordinator.pendingRequestIds(10L))
         assertEquals(10L, coordinator.nextPendingUuid())
         assertFalse(coordinator.isWorkerStopped())
 
@@ -141,6 +142,65 @@ class RoutineWorkerCoordinatorTest {
             coordinator.pendingRequestIds(10L)
         )
         assertEquals(1, schedules)
+    }
+
+    @Test
+    fun `request IDs remain correlated through correction and deferred retry`() {
+        val coordinator = RoutineWorkerCoordinator {}
+
+        coordinator.enqueue(
+            10L,
+            BooleanStateTransform.ENABLE,
+            "initial"
+        ) {}
+
+        val start = coordinator.beginNext(10L)
+        assertNotNull(start)
+        assertEquals(listOf("initial"), start!!.requestIds)
+        assertEquals(true, coordinator.setInFlightBaseline(false))
+
+        coordinator.enqueue(
+            10L,
+            BooleanStateTransform.TOGGLE,
+            "followup"
+        ) {}
+
+        assertEquals(
+            listOf("initial", "followup"),
+            coordinator.currentAttempt()!!.requestIds
+        )
+
+        assertFalse(coordinator.advanceAfterSuccess(false, true))
+
+        assertEquals(
+            listOf("followup", "initial"),
+            coordinator.currentAttempt()!!.requestIds
+        )
+
+        coordinator.releaseAfterFailure(preserveAttempt = true)
+
+        assertEquals(
+            listOf("followup", "initial"),
+            coordinator.pendingRequestIds(10L)
+        )
+
+        coordinator.enqueue(
+            10L,
+            BooleanStateTransform.TOGGLE,
+            "new-event"
+        ) {}
+
+        assertEquals(
+            listOf("followup", "initial", "new-event"),
+            coordinator.pendingRequestIds(10L)
+        )
+
+        val resumed = coordinator.beginNext(10L)
+        assertNotNull(resumed)
+        assertEquals(
+            listOf("followup", "initial", "new-event"),
+            resumed!!.requestIds
+        )
     }
 
     @Test
