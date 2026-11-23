@@ -23,10 +23,16 @@ final class ExternalProviderQuery {
         }
 
         Uri parsedUri = Uri.parse(uri);
-        String authority = parsedUri.getAuthority();
 
-        if (authority == null || authority.trim().isEmpty()) {
-            throw new RemoteException("Provider URI has no authority: " + uri);
+        if (!"content".equals(parsedUri.getScheme())) {
+            throw new RemoteException("Only content:// Provider URIs are accepted");
+        }
+
+        String authority = parsedUri.getAuthority();
+        if (!"com.samsung.android.app.routines.externalprovider".equals(authority)) {
+            throw new RemoteException(
+                    "Provider authority is not allowed: " + authority
+            );
         }
 
         int userId = clientUid / 100000;

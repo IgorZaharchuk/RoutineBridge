@@ -1,5 +1,6 @@
 package com.routinebridge.rootcore.internal;
 
+import android.content.ComponentName;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.RemoteException;
@@ -20,6 +21,18 @@ final class RootActivityLauncher {
         if (intent == null || intent.getComponent() == null) {
             throw new RemoteException(
                     "Only explicit Activity components are accepted"
+            );
+        }
+
+        ComponentName component = intent.getComponent();
+
+        if (!"com.samsung.android.app.routines".equals(
+                component.getPackageName())
+                || !"com.samsung.android.app.routines.ui.shortcut.ShortcutLaunchActivity"
+                .equals(component.getClassName())) {
+            throw new RemoteException(
+                    "Activity component is not allowed: "
+                            + component.flattenToShortString()
             );
         }
 
