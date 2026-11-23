@@ -221,7 +221,12 @@ class MainActivity : Activity() {
             expandAllText = getString(R.string.expand_all),
             collapseAllText = getString(R.string.collapse_all),
             actionTitle = ::actionTitle,
-            onInputClick = {},
+            onInputClick = { input ->
+                startActivity(Intent(this, ShortcutRunActivity::class.java).apply {
+                    action = ACTION_RUN_INPUT
+                    putExtra(EXTRA_INPUT_ID, input.id)
+                })
+            },
             onEditClick = { input ->
                 editingInputId =
                     if (editingInputId == input.id) null else input.id

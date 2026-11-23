@@ -16,6 +16,7 @@ import java.util.concurrent.Executors
 internal object SamsungRoutineDispatcher {
 
     private const val TAG = "RoutineBridge"
+    private const val MAX_RECONCILIATION_ATTEMPTS = 3
 
     private val worker = Executors.newSingleThreadExecutor { task ->
         Thread(task, "SamsungRoutineWorker")
@@ -165,6 +166,7 @@ internal object SamsungRoutineDispatcher {
         invalidateSession: (RootCoreSession) -> Unit
     ): Boolean {
         var confirmedAttempt = false
+        var reconciliationAttempts = 0
         var performedLaunch = false
         var requestId = "not-started"
         var activeSession: RootCoreSession? = null
@@ -211,10 +213,12 @@ internal object SamsungRoutineDispatcher {
                     RoutineExecutionStatus.SUCCESS -> {
                         performedLaunch = true
                         confirmedAttempt = true
+                        reconciliationAttempts++
                     }
 
                     RoutineExecutionStatus.SKIPPED -> {
                         confirmedAttempt = true
+                        reconciliationAttempts++
                     }
 
                     RoutineExecutionStatus.TIMEOUT -> {
@@ -260,6 +264,25 @@ internal object SamsungRoutineDispatcher {
                             "uuid=$uuid state=$actual"
                     )
                     return false
+                }
+
+                if (reconciliationAttempts >= MAX_RECONCILIATION_ATTEMPTS) {
+                    val deferredRequestIds = coordinator.inFlightRequestIds()
+                    val deferredRequestId =
+                        deferredRequestIds.firstOrNull() ?: requestId
+                    val desired = coordinator.inFlightDesiredState()
+                    val deferred = coordinator.releaseAfterFailure(
+                        preserveAttempt = true
+                    )
+
+                    Log.w(
+                        TAG,
+                        "DISPATCH_RECONCILE_LIMIT request=$deferredRequestId " +
+                            "related=${deferredRequestIds.drop(1).joinToString(",")} " +
+                            "uuid=$uuid attempts=$reconciliationAttempts " +
+                            "actual=$actual desired=$desired deferred=${deferred != null}"
+                    )
+                    return confirmedAttempt
                 }
 
                 val nextRequestIds = coordinator.inFlightRequestIds()
