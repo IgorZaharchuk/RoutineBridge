@@ -370,7 +370,20 @@ class MainActivity : Activity() {
                     name.error = getString(R.string.enter_name)
                     return@setOnClickListener
                 }
-                val routine = availableRoutines[routineSpinner.selectedItemPosition]
+                val selectedRoutine =
+                    availableRoutines.getOrNull(routineSpinner.selectedItemPosition)
+                        ?: run {
+                            setStatus(StatusType.ERROR, getString(R.string.wait_for_routines))
+                            return@setOnClickListener
+                        }
+                val routine = routines.firstOrNull { it.uuid == selectedRoutine.uuid }
+                    ?: run {
+                        setStatus(
+                            StatusType.ERROR,
+                            getString(R.string.routine_not_found, selectedRoutine.name)
+                        )
+                        return@setOnClickListener
+                    }
                 val item = RoutineInput(
                     id = UUID.randomUUID().toString(),
                     label = label,
