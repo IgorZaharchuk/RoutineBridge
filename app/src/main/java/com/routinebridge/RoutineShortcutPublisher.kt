@@ -15,17 +15,38 @@ class RoutineShortcutPublisher(private val context: Context) {
         disabledMessage: CharSequence? = null
     ): Boolean {
         val manager = context.getSystemService(ShortcutManager::class.java)
-        var removedShortcutsDisabled = true
-        if (removedInputIds.isNotEmpty()) {
-            removedShortcutsDisabled = runCatching {
-                manager.disableShortcuts(
-                    removedInputIds.map { "routine_input_$it" },
-                    disabledMessage ?: messages.getString(
-                        R.string.shortcut_input_missing
-                    )
-                )
-            }.isSuccess
+        val activeShortcutIds = inputs.mapTo(mutableSetOf()) {
+            "routine_input_${it.id}"
         }
+
+        val pinnedShortcutsResult = runCatching {
+            manager.pinnedShortcuts
+        }
+        val staleShortcutIds = buildSet {
+            removedInputIds
+                .map { "routine_input_$it" }
+                .filterNot { it in activeShortcutIds }
+                .forEach(::add)
+
+            pinnedShortcutsResult.getOrDefault(emptyList())
+                .map { it.id }
+                .filter {
+                    it.startsWith("routine_input_") &&
+                        it !in activeShortcutIds
+                }
+                .forEach(::add)
+        }
+
+        val removedShortcutsDisabled =
+            pinnedShortcutsResult.isSuccess &&
+                (staleShortcutIds.isEmpty() || runCatching {
+                    manager.disableShortcuts(
+                        staleShortcutIds.toList(),
+                        disabledMessage ?: messages.getString(
+                            R.string.shortcut_input_missing
+                        )
+                    )
+                }.isSuccess)
 
         val withinLimit = inputs.size <= manager.maxShortcutCountPerActivity
         val shortcuts = inputs.take(manager.maxShortcutCountPerActivity).map { input ->
