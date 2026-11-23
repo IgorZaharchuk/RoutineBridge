@@ -10,11 +10,13 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 
 class SamsungRoutineService : Service() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var workerWakeLock: PowerManager.WakeLock? = null
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(AppLocale.wrap(newBase))
@@ -72,17 +74,13 @@ class SamsungRoutineService : Service() {
         }
 
         Log.i(
-
             TAG,
-
             "SERVICE_COMMAND_RECEIVED request=${input.second} " +
-
                 "inputId=${input.first.id} uuid=${input.first.routineUuid} " +
-
                 "action=${input.first.action}"
-
         )
 
+        acquireWorkerWakeLock()
 
         try {
             SamsungRoutineDispatcher.enqueue(
@@ -111,10 +109,57 @@ class SamsungRoutineService : Service() {
     }
 
     private fun stopWhenDrained(startId: Int) {
-        if (!SamsungRoutineDispatcher.isWorkerStopped()) return
+        if (!SamsungRoutineDispatcher.isWorkerStopped()) {
+            SamsungRoutineDispatcher.whenWorkerStopped {
+                mainHandler.post {
+                    stopWhenDrained(startId)
+                }
+            }
+            return
+        }
+
+        releaseWorkerWakeLock()
 
         if (stopSelfResult(startId)) {
             stopForeground(STOP_FOREGROUND_REMOVE)
+        }
+    }
+
+    private fun acquireWorkerWakeLock() {
+        try {
+            val lock = workerWakeLock ?: run {
+                val powerManager = getSystemService(PowerManager::class.java)
+                    ?: throw IllegalStateException("PowerManager unavailable")
+
+                powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "$packageName:RoutineWorker"
+                ).apply {
+                    setReferenceCounted(false)
+                }.also {
+                    workerWakeLock = it
+                }
+            }
+
+            if (!lock.isHeld) {
+                lock.acquire()
+                Log.i(TAG, "WAKE_LOCK_ACQUIRED")
+            }
+        } catch (error: Exception) {
+            Log.e(TAG, "WAKE_LOCK_ACQUIRE_FAILED", error)
+        }
+    }
+
+    private fun releaseWorkerWakeLock() {
+        val lock = workerWakeLock ?: return
+
+        try {
+            if (lock.isHeld) {
+                lock.release()
+                Log.i(TAG, "WAKE_LOCK_RELEASED")
+            }
+        } catch (error: Exception) {
+            Log.e(TAG, "WAKE_LOCK_RELEASE_FAILED", error)
         }
     }
 
@@ -144,6 +189,11 @@ class SamsungRoutineService : Service() {
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .build()
+    }
+
+    override fun onDestroy() {
+        releaseWorkerWakeLock()
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
