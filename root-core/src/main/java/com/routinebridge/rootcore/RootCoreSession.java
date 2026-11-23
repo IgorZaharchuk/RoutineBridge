@@ -10,6 +10,7 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Process;
@@ -41,6 +42,7 @@ public final class RootCoreSession implements AutoCloseable {
     private final java.lang.Process rootProcess;
     private final String sessionId;
     private final BroadcastReceiver receiver;
+    private final HandlerThread receiverThread;
     private final IRootCoreManager remote;
     private final IBinder localToken;
     private final IBinder.DeathRecipient deathRecipient;
@@ -54,6 +56,7 @@ public final class RootCoreSession implements AutoCloseable {
             java.lang.Process rootProcess,
             String sessionId,
             BroadcastReceiver receiver,
+            HandlerThread receiverThread,
             IRootCoreManager remote,
             IBinder localToken,
             IBinder.DeathRecipient deathRecipient
@@ -62,6 +65,7 @@ public final class RootCoreSession implements AutoCloseable {
         this.rootProcess = rootProcess;
         this.sessionId = sessionId;
         this.receiver = receiver;
+        this.receiverThread = receiverThread;
         this.remote = remote;
         this.localToken = localToken;
         this.deathRecipient = deathRecipient;
@@ -95,7 +99,11 @@ public final class RootCoreSession implements AutoCloseable {
         AtomicReference<IBinder.DeathRecipient> deathRef = new AtomicReference<>();
         AtomicReference<Throwable> connectionError = new AtomicReference<>();
 
-        Handler mainHandler = new Handler(Looper.getMainLooper());
+        HandlerThread receiverThread = new HandlerThread(
+                "RootCoreReceiver-" + sessionId
+        );
+        receiverThread.start();
+        Handler receiverHandler = new Handler(receiverThread.getLooper());
 
         BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
@@ -197,14 +205,16 @@ public final class RootCoreSession implements AutoCloseable {
         };
 
         IntentFilter filter = new IntentFilter(action);
-        if (Build.VERSION.SDK_INT >= 33) {
-            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
-        } else {
-            context.registerReceiver(receiver, filter, null, mainHandler);
-        }
-
         java.lang.Process process = null;
         try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                context.registerReceiver(
+                        receiver, filter, null, receiverHandler,
+                        Context.RECEIVER_EXPORTED
+                );
+            } else {
+                context.registerReceiver(receiver, filter, null, receiverHandler);
+            }
             String command =
                     "CLASSPATH=" + shellQuote(jar.getAbsolutePath()) +
                     " app_process /system/bin " +
@@ -248,7 +258,8 @@ public final class RootCoreSession implements AutoCloseable {
             }
 
             return new RootCoreSession(
-                    context, process, sessionId, receiver, manager, token, death
+                    context, process, sessionId, receiver, receiverThread,
+                    manager, token, death
             );
         } catch (Throwable error) {
             try {
@@ -256,6 +267,7 @@ public final class RootCoreSession implements AutoCloseable {
             } catch (Throwable ignored) {
             }
             if (process != null) terminateProcess(process);
+            receiverThread.quitSafely();
             throw error;
         }
     }
@@ -402,6 +414,7 @@ public final class RootCoreSession implements AutoCloseable {
             context.unregisterReceiver(receiver);
         } catch (Throwable ignored) {
         }
+        receiverThread.quitSafely();
     }
 
     public boolean awaitTermination(long timeoutMs) throws InterruptedException {
