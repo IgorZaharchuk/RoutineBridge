@@ -73,6 +73,25 @@ public final class RootCoreSession implements AutoCloseable {
         BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context ignored, Intent intent) {
+                if (!action.equals(intent.getAction())) {
+                    android.util.Log.w(
+                            "RoutineBridgeRootCore",
+                            "Ignoring Binder broadcast with unexpected action"
+                    );
+                    return;
+                }
+
+                if (Build.VERSION.SDK_INT >= 34) {
+                    int senderUid = getSentFromUid();
+                    if (senderUid != 0) {
+                        android.util.Log.w(
+                                "RoutineBridgeRootCore",
+                                "Ignoring Binder broadcast from UID " + senderUid
+                        );
+                        return;
+                    }
+                }
+
                 if (!sessionId.equals(intent.getStringExtra("extra.session_id"))) {
                     android.util.Log.w(
                             "RoutineBridgeRootCore",
