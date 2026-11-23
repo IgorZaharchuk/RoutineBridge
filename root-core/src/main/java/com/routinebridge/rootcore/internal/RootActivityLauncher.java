@@ -108,6 +108,8 @@ final class RootActivityLauncher {
             final ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
             final java.util.concurrent.atomic.AtomicReference<Throwable> outputReadError =
                     new java.util.concurrent.atomic.AtomicReference<>();
+            final java.util.concurrent.atomic.AtomicBoolean outputReadCancelled =
+                    new java.util.concurrent.atomic.AtomicBoolean(false);
 
             Thread outputReader = new Thread(() -> {
                 try (InputStream input = startedProcess.getInputStream()) {
@@ -117,7 +119,9 @@ final class RootActivityLauncher {
                         outputBuffer.write(buffer, 0, count);
                     }
                 } catch (Throwable error) {
-                    outputReadError.set(error);
+                    if (!outputReadCancelled.get()) {
+                        outputReadError.set(error);
+                    }
                 }
             }, "RoutineBridge-am-output");
             outputReader.setDaemon(true);
@@ -136,7 +140,26 @@ final class RootActivityLauncher {
                 throw new RemoteException("am start timed out after 15 seconds");
             }
 
-            outputReader.join();
+            outputReader.join(1_000L);
+
+            if (outputReader.isAlive()) {
+                android.util.Log.w(TAG,
+                        "am output reader did not finish; closing its stream");
+                outputReadCancelled.set(true);
+
+                try {
+                    process.getInputStream().close();
+                } catch (Throwable ignored) {
+                }
+
+                outputReader.join(1_000L);
+
+                if (outputReader.isAlive()) {
+                    throw new RemoteException(
+                            "am output reader did not terminate after stream close"
+                    );
+                }
+            }
 
             Throwable readError = outputReadError.get();
             if (readError != null) {
