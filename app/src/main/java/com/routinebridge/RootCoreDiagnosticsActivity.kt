@@ -285,7 +285,12 @@ class RootCoreDiagnosticsActivity : Activity() {
     private fun loadRoutines() {
         worker.execute {
             try {
-                val loaded = ManualRoutineRepository(applicationContext).load()
+                val rootSession = RootCoreAccess.open(applicationContext)
+                val loaded = try {
+                    ManualRoutineRepository(applicationContext).load(rootSession)
+                } finally {
+                    RootCoreAccess.close(rootSession)
+                }
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     availableRoutines = loaded
@@ -556,12 +561,9 @@ class RootCoreDiagnosticsActivity : Activity() {
         report.add(getString(R.string.diagnostics_dispatcher_mode))
         report.add(getString(R.string.diagnostics_dispatcher_selected, selected.joinToString { it.name }))
 
-        val initialSession = RootCoreAccess.open(applicationContext)
-        val initialRoutines = try {
-            repository.load(initialSession)
-        } finally {
-            RootCoreAccess.close(initialSession)
-        }
+        val diagnosticSession = RootCoreAccess.open(applicationContext)
+        try {
+            val initialRoutines = repository.load(diagnosticSession)
 
         val ready = selected.mapIndexed { index, chosen ->
             val current = initialRoutines.firstOrNull {
@@ -625,12 +627,7 @@ class RootCoreDiagnosticsActivity : Activity() {
 
         report.add("TEST_BATCH_DRAINED size=${requests.size}")
 
-        val verificationSession = RootCoreAccess.open(applicationContext)
-        val verifiedRoutines = try {
-            repository.load(verificationSession)
-        } finally {
-            RootCoreAccess.close(verificationSession)
-        }
+        val verifiedRoutines = repository.load(diagnosticSession)
 
         ready.forEachIndexed { index, (routine, initialRunning) ->
             val confirmed = verifiedRoutines.firstOrNull {
@@ -649,6 +646,9 @@ class RootCoreDiagnosticsActivity : Activity() {
 
         report.add(getString(R.string.diagnostics_all_routines_confirmed))
         return report.joinToString("\n")
+        } finally {
+            RootCoreAccess.close(diagnosticSession)
+        }
     }
 
     private fun queryReport(current: RootCoreSession): String {

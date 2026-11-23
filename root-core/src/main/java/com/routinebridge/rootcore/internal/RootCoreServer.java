@@ -165,6 +165,6 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
         connected = false;
 
         android.util.Log.i(TAG, "Root Core session closing");
-        handler.postDelayed(() -> System.exit(0), 150L);
+        handler.postDelayed(() -> System.exit(0), 50L);
     }
 }
