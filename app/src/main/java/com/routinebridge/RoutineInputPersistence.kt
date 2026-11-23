@@ -21,12 +21,7 @@ internal class RoutineInputPersistence(context: Context) {
 
     fun load(): List<RoutineInput> {
         loadedSuccessfully = false
-        return try {
-            store.load().also { loadedSuccessfully = true }
-        } catch (error: Throwable) {
-            loadedSuccessfully = false
-            throw error
-        }
+        return store.load().also { loadedSuccessfully = true }
     }
 
     fun publishLoaded(inputs: List<RoutineInput>): RoutineInputPublicationResult {

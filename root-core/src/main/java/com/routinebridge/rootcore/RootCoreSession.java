@@ -303,6 +303,15 @@ public final class RootCoreSession implements AutoCloseable {
         });
     }
 
+    private static RemoteException remoteException(
+            String message,
+            Throwable cause
+    ) {
+        RemoteException exception = new RemoteException(message);
+        exception.initCause(cause);
+        return exception;
+    }
+
     private synchronized <T> T callRemote(
             String operation,
             Callable<T> call
@@ -314,7 +323,7 @@ public final class RootCoreSession implements AutoCloseable {
             future = binderExecutor.submit(call);
         } catch (RejectedExecutionException error) {
             unusable = true;
-            throw new RemoteException(
+            throw remoteException(
                     "Root Core executor is unavailable: " + operation,
                     error
             );
@@ -331,7 +340,7 @@ public final class RootCoreSession implements AutoCloseable {
             );
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
-            throw new RemoteException(
+            throw remoteException(
                     "Interrupted while waiting for Root Core Binder: " + operation,
                     error
             );
@@ -346,7 +355,7 @@ public final class RootCoreSession implements AutoCloseable {
             if (cause instanceof Error) {
                 throw (Error) cause;
             }
-            throw new RemoteException(
+            throw remoteException(
                     "Root Core Binder call failed: " + operation,
                     cause
             );
