@@ -324,10 +324,6 @@ public final class RootCoreSession implements AutoCloseable {
         return sessionId;
     }
 
-    public long getRootProcessPid() {
-        return rootProcess.pid();
-    }
-
     private static void terminateProcess(java.lang.Process process) {
         process.destroy();
         try {
