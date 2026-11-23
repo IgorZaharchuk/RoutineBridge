@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
+import com.routinebridge.rootcore.RootCoreSession
 import java.util.concurrent.Executors
 
 /**
@@ -67,24 +68,42 @@ internal object SamsungRoutineDispatcher {
     }
 
     private fun drainQueue() {
-        while (true) {
-            val uuid = coordinator.nextPendingUuid()
+        var session: RootCoreSession? = null
 
-            if (uuid == null) {
-                if (coordinator.stopIfNoPending()) {
-                    notifyWorkerStopped()
-                    return
+        try {
+            while (true) {
+                val uuid = coordinator.nextPendingUuid()
+
+                if (uuid == null) {
+                    if (coordinator.stopIfNoPending()) {
+                        break
+                    }
+                    continue
                 }
-                continue
-            }
 
-            // A true result means a confirmed operation required correction,
-            // but that correction failed. Keep its target pending and wait
-            // for a genuinely new event before resuming the worker.
-            if (processRoutine(uuid)) {
-                notifyWorkerStopped()
-                return
+                // One RootCore session is shared by every operation handled
+                // during this active worker cycle.
+                if (processRoutine(
+                    uuid = uuid,
+                    getSession = { context ->
+                        session ?: RootCoreAccess.open(context).also {
+                            session = it
+                        }
+                    },
+                    invalidateSession = { failedSession ->
+                        if (session === failedSession) {
+                            RootCoreAccess.close(failedSession)
+                            session = null
+                        }
+                    }
+                )) {
+                    break
+                }
             }
+        } finally {
+            // Close RootCore before notifying the Service that the worker stopped.
+            session?.let(RootCoreAccess::close)
+            notifyWorkerStopped()
         }
     }
 
@@ -100,10 +119,15 @@ internal object SamsungRoutineDispatcher {
         }
     }
 
-    private fun processRoutine(uuid: Long): Boolean {
+    private fun processRoutine(
+        uuid: Long,
+        getSession: (Context) -> RootCoreSession,
+        invalidateSession: (RootCoreSession) -> Unit
+    ): Boolean {
         var confirmedAttempt = false
         var performedLaunch = false
         var requestId = "not-started"
+        var activeSession: RootCoreSession? = null
 
         try {
             // Move the command to in-flight before any setup that may fail.
@@ -115,6 +139,8 @@ internal object SamsungRoutineDispatcher {
 
             val repository = ManualRoutineRepository(context)
             val executor = RoutineActionExecutor(context, repository)
+            val session = getSession(context)
+            activeSession = session
 
             Log.i(
                 TAG,
@@ -129,6 +155,7 @@ internal object SamsungRoutineDispatcher {
                 requestId = requestIds.firstOrNull() ?: "unknown"
 
                 val result = executor.executeOnce(
+                    session = session,
                     routineUuid = uuid,
                     transform = attempt.transform,
                     requestIds = requestIds,
@@ -203,6 +230,12 @@ internal object SamsungRoutineDispatcher {
                 )
             }
         } catch (error: Exception) {
+            activeSession?.let { failedSession ->
+                if (!RootCoreAccess.isUsable(failedSession)) {
+                    invalidateSession(failedSession)
+                }
+            }
+
             val released = coordinator.releaseAfterFailure(confirmedAttempt)
 
             Log.e(

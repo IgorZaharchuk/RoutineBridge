@@ -191,7 +191,9 @@ public final class RootCoreSession implements AutoCloseable {
 
             process = new ProcessBuilder("su", "-c", command)
                     .redirectErrorStream(true)
+                    .redirectOutput(new File("/dev/null"))
                     .start();
+            process.getOutputStream().close();
 
             boolean arrived = connected.await(timeoutMs, TimeUnit.MILLISECONDS);
 
@@ -228,7 +230,7 @@ public final class RootCoreSession implements AutoCloseable {
                 context.unregisterReceiver(receiver);
             } catch (Throwable ignored) {
             }
-            if (process != null) process.destroy();
+            if (process != null) terminateProcess(process);
             throw error;
         }
     }
@@ -307,6 +309,19 @@ public final class RootCoreSession implements AutoCloseable {
 
     public boolean isRootProcessAlive() {
         return rootProcess.isAlive();
+    }
+
+    private static void terminateProcess(java.lang.Process process) {
+        process.destroy();
+        try {
+            if (!process.waitFor(1, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                process.waitFor(1, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException error) {
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static synchronized File installBootstrapAsset(Context context)

@@ -43,6 +43,14 @@ internal object RootCoreAccess {
         }
     }
 
+    fun isUsable(session: RootCoreSession): Boolean {
+        return try {
+            session.isRootProcessAlive() && session.ping() == 0
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun close(session: RootCoreSession) {
         try {
             session.close()
