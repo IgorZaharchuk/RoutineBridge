@@ -32,9 +32,9 @@ final class RootActivityLauncher {
 
         ComponentName component = intent.getComponent();
 
-        if (!policy.allowsActivity(component)) {
+        if (!policy.allowsActivity(intent)) {
             throw new RemoteException(
-                    "Activity component is not allowed: "
+                    "Activity Intent is not allowed by RootCore policy: "
                             + component.flattenToShortString()
             );
         }

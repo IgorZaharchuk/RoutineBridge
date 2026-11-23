@@ -23,13 +23,21 @@ internal object RootCoreAccess {
             ComponentName(
                 "com.samsung.android.app.routines",
                 "com.samsung.android.app.routines.ui.shortcut.ShortcutLaunchActivity"
+            ),
+            null,
+            0x10008000,
+            mapOf(
+                "EXTRA_KEY_ROUTINE_UUID" to RootCorePolicy.ExtraType.LONG
             )
         )
         .build()
 
-    fun open(context: Context): RootCoreSession {
+    fun open(
+        context: Context,
+        timeoutMs: Long = 15_000L
+    ): RootCoreSession {
         return try {
-            RootCore.open(context.applicationContext, policy)
+            RootCore.open(context.applicationContext, policy, timeoutMs)
         } catch (error: Exception) {
             throw RootCoreAccessException(error)
         }

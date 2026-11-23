@@ -28,19 +28,41 @@ final class ExternalProviderQuery {
         if (uri == null || uri.trim().isEmpty()) {
             throw new RemoteException("Provider URI is empty");
         }
+        if (uri.length() > MAX_URI_LENGTH || !uri.equals(uri.trim())) {
+            throw new RemoteException("Provider URI length or whitespace is invalid");
+        }
 
         Uri parsedUri = Uri.parse(uri);
 
-        if (!"content".equals(parsedUri.getScheme())) {
-            throw new RemoteException("Only content:// Provider URIs are accepted");
+        if (!parsedUri.isHierarchical()
+                || !"content".equals(parsedUri.getScheme())) {
+            throw new RemoteException("Only hierarchical content:// Provider URIs are accepted");
         }
 
         String authority = parsedUri.getAuthority();
         if (authority == null || !policy.allowsProviderAuthority(authority)) {
-            throw new RemoteException(
-                    "Provider authority is not allowed: " + authority
-            );
+            throw new RemoteException("Provider authority is not allowed: " + authority);
         }
+
+        if (parsedUri.getUserInfo() != null || parsedUri.getPort() != -1) {
+            throw new RemoteException("Provider URI authority contains unsupported parts");
+        }
+
+        String encodedPath = parsedUri.getEncodedPath();
+        String encodedQuery = parsedUri.getEncodedQuery();
+        String encodedFragment = parsedUri.getEncodedFragment();
+
+        if (encodedPath != null && encodedPath.length() > MAX_PATH_LENGTH) {
+            throw new RemoteException("Provider URI path is too long");
+        }
+        if (encodedQuery != null && encodedQuery.length() > MAX_QUERY_LENGTH) {
+            throw new RemoteException("Provider URI query is too long");
+        }
+        if (encodedFragment != null) {
+            throw new RemoteException("Provider URI fragments are not accepted");
+        }
+
+        validateProjection(projection);
 
         int userId = clientUid / 100000;
         IBinder externalToken = new Binder();
@@ -51,7 +73,7 @@ final class ExternalProviderQuery {
         boolean providerAcquired = false;
         Throwable operationError = null;
 
-        android.util.Log.i(TAG, "External Provider query started: " + uri);
+        android.util.Log.i(TAG, "External Provider query started: authority=" + authority);
 
         try {
             activityManager = getActivityManager();
@@ -187,7 +209,7 @@ final class ExternalProviderQuery {
 
         } catch (RemoteException error) {
             operationError = error;
-            android.util.Log.e(TAG, "External Provider query failed: " + uri, error);
+            android.util.Log.e(TAG, "External Provider query failed: authority=" + authority, error);
             throw error;
 
         } catch (Throwable error) {
@@ -198,7 +220,7 @@ final class ExternalProviderQuery {
             remoteError.initCause(error);
             operationError = remoteError;
 
-            android.util.Log.e(TAG, "External Provider query crashed: " + uri, error);
+            android.util.Log.e(TAG, "External Provider query crashed: authority=" + authority, error);
             throw remoteError;
 
         } finally {
@@ -260,6 +282,28 @@ final class ExternalProviderQuery {
                         throw remoteError;
                     }
                 }
+            }
+        }
+    }
+
+    private static final int MAX_URI_LENGTH = 4096;
+    private static final int MAX_PATH_LENGTH = 1024;
+    private static final int MAX_QUERY_LENGTH = 2048;
+    private static final int MAX_PROJECTION_COLUMNS = 64;
+    private static final int MAX_COLUMN_NAME_LENGTH = 128;
+
+    private static void validateProjection(String[] projection)
+            throws RemoteException {
+        if (projection == null) return;
+
+        if (projection.length > MAX_PROJECTION_COLUMNS) {
+            throw new RemoteException("Provider projection contains too many columns");
+        }
+
+        for (String column : projection) {
+            if (column == null || column.trim().isEmpty()
+                    || column.length() > MAX_COLUMN_NAME_LENGTH) {
+                throw new RemoteException("Provider projection contains an invalid column");
             }
         }
     }
