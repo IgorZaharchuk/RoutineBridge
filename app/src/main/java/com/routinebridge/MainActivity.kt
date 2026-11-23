@@ -20,6 +20,8 @@ import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 private enum class StatusType {
     LOADING,
@@ -43,6 +45,12 @@ class MainActivity : Activity() {
     private var shortcutPublishError: String? = null
     private var inputLoadError: String? = null
     private var refreshRequestId = 0
+    private var refreshTask: Future<*>? = null
+    private val refreshExecutor by lazy {
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "RoutineRefresh").apply { isDaemon = true }
+        }
+    }
     private fun actionTitle(action: RoutineInputAction) = when (action) {
         RoutineInputAction.ENABLE -> getString(R.string.action_enable)
         RoutineInputAction.DISABLE -> getString(R.string.action_disable)
@@ -258,8 +266,9 @@ class MainActivity : Activity() {
 
     private fun refreshRoutines() {
         val requestId = ++refreshRequestId
+        refreshTask?.cancel(true)
         setStatus(StatusType.LOADING, getString(R.string.loading_root_routines))
-        Thread {
+        refreshTask = refreshExecutor.submit {
             try {
                 val loaded = repository.load()
                 runOnUiThread {
@@ -293,7 +302,14 @@ class MainActivity : Activity() {
                     setStatus(StatusType.ERROR, message)
                 }
             }
-        }.start()
+        }
+    }
+
+    override fun onDestroy() {
+        refreshRequestId++
+        refreshTask?.cancel(true)
+        refreshExecutor.shutdownNow()
+        super.onDestroy()
     }
 
     private fun openEditor() {
