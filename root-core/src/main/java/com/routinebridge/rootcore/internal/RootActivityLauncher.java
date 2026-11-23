@@ -36,6 +36,26 @@ final class RootActivityLauncher {
             );
         }
 
+        if (intent.getAction() != null) {
+            throw new RemoteException("Activity action is not allowed");
+        }
+
+        if (intent.getFlags() != 0x10008000) {
+            throw new RemoteException(
+                    "Activity flags are not allowed: " + intent.getFlags()
+            );
+        }
+
+        Bundle extras = intent.getExtras();
+        if (extras == null
+                || extras.size() != 1
+                || !extras.containsKey("EXTRA_KEY_ROUTINE_UUID")
+                || !(extras.get("EXTRA_KEY_ROUTINE_UUID") instanceof Long)) {
+            throw new RemoteException(
+                    "Only the Samsung routine UUID Long extra is allowed"
+            );
+        }
+
         ArrayList<String> command = new ArrayList<>();
         command.add("/system/bin/am");
         command.add("start");
