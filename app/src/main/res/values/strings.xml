@@ -97,6 +97,10 @@
     <string name="diagnostics_activity_policy">6. Activity policy — allow and reject</string>
     <string name="diagnostics_independent">7. Two independent sessions</string>
     <string name="diagnostics_close">8. Close session and verify process exit</string>
+    <string name="diagnostics_activity_deny">9. Activity deny — real Binder rejection</string>
+    <string name="diagnostics_provider_validation">10. URI and projection validation</string>
+    <string name="diagnostics_provider_error">11. Provider error propagation</string>
+    <string name="diagnostics_close_after_failure">12. Close session after Binder failure</string>
     <string name="diagnostics_results">Test results</string>
     <string name="diagnostics_output_empty">Test results will appear here.</string>
     <string name="diagnostics_clear">Clear results</string>

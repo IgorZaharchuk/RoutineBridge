@@ -196,6 +196,121 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+        addTestButton(tests, getString(R.string.diagnostics_activity_deny)) {
+            runTest("ACTIVITY DENY") {
+                val denied = RootCore.open(
+                    applicationContext,
+                    RootCorePolicy.denyAll(),
+                    15_000L
+                )
+                try {
+                    val component = ComponentName(
+                        "com.samsung.android.app.routines",
+                        "com.samsung.android.app.routines.ui.shortcut.ShortcutLaunchActivity"
+                    )
+                    val denial = try {
+                        denied.launchActivity(component, null, null, 0)
+                        null
+                    } catch (error: SecurityException) {
+                        error
+                    }
+
+                    check(denial != null) {
+                        "Expected SecurityException; forbidden Activity was accepted"
+                    }
+                    "Binder rejected forbidden Activity: ${denial.message}"
+                } finally {
+                    denied.close()
+                    check(denied.awaitTermination(5_000L)) {
+                        "Denied Activity session did not terminate"
+                    }
+                }
+            }
+        }
+
+        addTestButton(tests, getString(R.string.diagnostics_provider_validation)) {
+            runTest("PROVIDER INPUT VALIDATION") {
+                val current = requireSession()
+
+                val invalidUriRejected = try {
+                    current.queryProvider(Uri.parse("https://example.invalid/path"), null)
+                    false
+                } catch (_: IllegalArgumentException) {
+                    true
+                }
+
+                val invalidProjectionRejected = try {
+                    current.queryProvider(providerUri, arrayOf(""))
+                    false
+                } catch (_: IllegalArgumentException) {
+                    true
+                }
+
+                check(invalidUriRejected) {
+                    "Invalid Provider URI was not rejected with IllegalArgumentException"
+                }
+                check(invalidProjectionRejected) {
+                    "Invalid projection was not rejected with IllegalArgumentException"
+                }
+
+                "Invalid URI and projection rejected with IllegalArgumentException"
+            }
+        }
+
+        addTestButton(tests, getString(R.string.diagnostics_provider_error)) {
+            runTest("PROVIDER ERROR PROPAGATION") {
+                val failure = try {
+                    requireSession().queryProvider(
+                        providerUri,
+                        arrayOf("__rootcore_missing_column__")
+                    )
+                    null
+                } catch (error: RuntimeException) {
+                    error
+                }
+
+                check(failure != null) {
+                    "Samsung Provider accepted the deliberately unknown column"
+                }
+                check(!failure.message.isNullOrBlank()) {
+                    "Provider error was propagated without a useful message"
+                }
+
+                "Provider error preserved: ${failure.javaClass.simpleName}: ${failure.message}"
+            }
+        }
+
+        addTestButton(tests, getString(R.string.diagnostics_close_after_failure)) {
+            runTest("CLOSE AFTER FAILED CALL") {
+                val current = RootCoreAccess.open(applicationContext, 15_000L)
+                try {
+                    val rejected = try {
+                        current.queryProvider(
+                            Uri.parse("https://example.invalid/path"),
+                            null
+                        )
+                        false
+                    } catch (_: IllegalArgumentException) {
+                        true
+                    }
+
+                    check(rejected) {
+                        "Invalid Provider URI did not produce IllegalArgumentException"
+                    }
+
+                    current.close()
+                    check(current.awaitTermination(5_000L)) {
+                        "Root process did not terminate after failed Binder call"
+                    }
+
+                    "Invalid Binder call rejected; session closed and root process terminated"
+                } finally {
+                    runCatching { current.close() }
+                    runCatching { current.awaitTermination(2_000L) }
+                }
+            }
+        }
+
         addTestButton(tests, getString(R.string.diagnostics_independent)) {
             runTest("INDEPENDENT SESSIONS") {
                 val first = RootCoreAccess.open(applicationContext, 15_000L)
@@ -242,20 +357,6 @@ class RootCoreDiagnosticsActivity : Activity() {
 
         content.addView(tests)
 
-        content.addView(
-            text(getString(R.string.diagnostics_results), 16f, white, true).apply {
-                setPadding(0, dp(18), 0, dp(8))
-            }
-        )
-
-        output = text(getString(R.string.diagnostics_output_empty), 12f, secondary).apply {
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            background = rounded(surface, 10)
-            setTextIsSelectable(true)
-            gravity = Gravity.TOP
-        }
-        content.addView(output, LinearLayout.LayoutParams(-1, -2))
-
         val copyButton = Button(this).apply {
             text = getString(android.R.string.copy)
             isAllCaps = false
@@ -280,6 +381,20 @@ class RootCoreDiagnosticsActivity : Activity() {
         addTestButton(content, getString(R.string.diagnostics_clear)) {
             output.text = getString(R.string.diagnostics_output_empty)
         }
+
+        content.addView(
+            text(getString(R.string.diagnostics_results), 16f, white, true).apply {
+                setPadding(0, dp(18), 0, dp(8))
+            }
+        )
+
+        output = text(getString(R.string.diagnostics_output_empty), 12f, secondary).apply {
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = rounded(surface, 10)
+            setTextIsSelectable(true)
+            gravity = Gravity.TOP
+        }
+        content.addView(output, LinearLayout.LayoutParams(-1, -2))
 
         val scroll = ScrollView(this)
         scroll.addView(content)
