@@ -151,6 +151,17 @@ final class ExternalProviderQuery {
                         attribution, parsedUri, projection, new Bundle(), null
                 };
 
+            } else if (parameters.length == 6
+                    && parameters[0] == String.class
+                    && parameters[1] == String.class
+                    && parameters[2] == Uri.class
+                    && parameters[3] == String[].class
+                    && parameters[4] == Bundle.class
+                    && "android.os.ICancellationSignal".equals(parameters[5].getName())) {
+                queryArguments = new Object[] {
+                        "root", null, parsedUri, projection, new Bundle(), null
+                };
+
             } else if (parameters.length == 5) {
                 queryArguments = new Object[] {
                         "root", parsedUri, projection, new Bundle(), null
@@ -399,6 +410,16 @@ final class ExternalProviderQuery {
             }
 
             Class<?>[] p = method.getParameterTypes();
+
+            if (p.length == 6
+                    && p[0] == String.class
+                    && p[1] == String.class
+                    && p[2] == Uri.class
+                    && p[3] == String[].class
+                    && p[4] == Bundle.class
+                    && "android.os.ICancellationSignal".equals(p[5].getName())) {
+                return method;
+            }
 
             if (p.length == 5
                     && p[1] == Uri.class

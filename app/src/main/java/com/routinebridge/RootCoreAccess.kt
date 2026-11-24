@@ -40,7 +40,7 @@ internal object RootCoreAccess {
             val session = RootCore.open(context.applicationContext, policy, timeoutMs)
             Log.i(
                 TAG,
-                "ROOT_SESSION_OPEN session=${session.sessionId}"
+                "ROOT_SESSION_OPEN session=${session.sessionId.take(8)}"
             )
             session
         } catch (error: Exception) {
@@ -58,7 +58,7 @@ internal object RootCoreAccess {
 
     fun close(session: RootCoreSession) {
         try {
-            val sessionId = session.sessionId
+            val sessionId = session.sessionId.take(8)
 
             Log.i(
                 TAG,
