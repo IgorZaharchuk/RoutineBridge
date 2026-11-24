@@ -259,11 +259,16 @@ class RootCoreDiagnosticsActivity : Activity() {
 
         addTestButton(tests, getString(R.string.diagnostics_provider_error)) {
             runTest("PROVIDER ERROR PROPAGATION") {
+                val badUri = providerUri.buildUpon()
+                    .path("/routinebridge_nonexistent_path")
+                    .build()
+
+                check(badUri.authority == providerUri.authority) {
+                    "Test URI authority changed unexpectedly"
+                }
+
                 val failure = try {
-                    requireSession().queryProvider(
-                        providerUri,
-                        arrayOf("__rootcore_missing_column__")
-                    )
+                    requireSession().queryProvider(badUri, null)
                     null
                 } catch (error: RuntimeException) {
                     error
