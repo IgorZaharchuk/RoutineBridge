@@ -86,4 +86,18 @@
     <string name="application_log_exit_error">LOGCAT_UNAVAILABLE: logcat exited with code %1$d
 %2$s</string>
     <string name="application_log_error">LOGCAT_UNAVAILABLE: %1$s: %2$s</string>
+    <string name="diagnostics_button">Root Core</string>
+    <string name="diagnostics_title">Root Core diagnostics</string>
+    <string name="diagnostics_intro">Tests for root sessions, Binder, Provider access and policy enforcement. Activity tests do not launch an Activity.</string>
+    <string name="diagnostics_open">1. Open root session</string>
+    <string name="diagnostics_ping">2. Binder ping and UID 0</string>
+    <string name="diagnostics_provider_allow">3. Provider allow — real Samsung query</string>
+    <string name="diagnostics_provider_deny">4. Provider deny — denyAll policy</string>
+    <string name="diagnostics_repeat">5. Five queries in one session</string>
+    <string name="diagnostics_activity_policy">6. Activity policy — allow and reject</string>
+    <string name="diagnostics_independent">7. Two independent sessions</string>
+    <string name="diagnostics_close">8. Close session and verify process exit</string>
+    <string name="diagnostics_results">Test results</string>
+    <string name="diagnostics_output_empty">Test results will appear here.</string>
+    <string name="diagnostics_clear">Clear results</string>
 </resources>

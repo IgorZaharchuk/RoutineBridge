@@ -168,6 +168,14 @@ class MainActivity : Activity() {
             }
         )
         header.addView(
+            button(getString(R.string.diagnostics_button)) {
+                startActivity(Intent(this, RootCoreDiagnosticsActivity::class.java))
+            },
+            LinearLayout.LayoutParams(dp(76), dp(40)).apply {
+                marginEnd = dp(6)
+            }
+        )
+        header.addView(
             button(getString(R.string.language_switch)) {
                 getSharedPreferences("settings", MODE_PRIVATE)
                     .edit()

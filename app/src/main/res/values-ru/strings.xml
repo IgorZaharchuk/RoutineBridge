@@ -88,4 +88,18 @@
     <string name="application_log_exit_error">LOGCAT_UNAVAILABLE: logcat завершился с кодом %1$d
 %2$s</string>
     <string name="application_log_error">LOGCAT_UNAVAILABLE: %1$s: %2$s</string>
+    <string name="diagnostics_button">Root Core</string>
+    <string name="diagnostics_title">Диагностика Root Core</string>
+    <string name="diagnostics_intro">Проверки root-сессий, Binder, Provider и политик доступа. Проверка Activity не запускает Activity.</string>
+    <string name="diagnostics_open">1. Открыть root-сессию</string>
+    <string name="diagnostics_ping">2. Binder ping и UID 0</string>
+    <string name="diagnostics_provider_allow">3. Provider allow — реальный запрос Samsung</string>
+    <string name="diagnostics_provider_deny">4. Provider deny — политика denyAll</string>
+    <string name="diagnostics_repeat">5. Пять запросов в одной сессии</string>
+    <string name="diagnostics_activity_policy">6. Политика Activity — разрешение и отказ</string>
+    <string name="diagnostics_independent">7. Две независимые сессии</string>
+    <string name="diagnostics_close">8. Закрыть сессию и проверить завершение процесса</string>
+    <string name="diagnostics_results">Результаты тестов</string>
+    <string name="diagnostics_output_empty">Здесь появятся результаты тестов.</string>
+    <string name="diagnostics_clear">Очистить результаты</string>
 </resources>
