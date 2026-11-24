@@ -25,7 +25,7 @@ final class RootActivityLauncher {
     ) throws RemoteException {
 
         if (intent == null || intent.getComponent() == null) {
-            throw new RemoteException(
+            throw new IllegalArgumentException(
                     "Only explicit Activity components are accepted"
             );
         }
@@ -33,7 +33,7 @@ final class RootActivityLauncher {
         ComponentName component = intent.getComponent();
 
         if (!policy.allowsActivity(intent)) {
-            throw new RemoteException(
+            throw new SecurityException(
                     "Activity Intent is not allowed by RootCore policy: "
                             + component.flattenToShortString()
             );
@@ -60,7 +60,7 @@ final class RootActivityLauncher {
         if (extras != null) {
             for (String key : extras.keySet()) {
                 if (key == null || key.isEmpty()) {
-                    throw new RemoteException("Activity extra has an empty key");
+                    throw new IllegalArgumentException("Activity extra has an empty key");
                 }
 
                 Object value = extras.get(key);
@@ -86,7 +86,7 @@ final class RootActivityLauncher {
                     command.add(key);
                     command.add(String.valueOf(value));
                 } else {
-                    throw new RemoteException(
+                    throw new IllegalArgumentException(
                             "Unsupported Activity extra type for key "
                                     + key + ": "
                                     + (value == null
@@ -141,7 +141,7 @@ final class RootActivityLauncher {
                 }
 
                 outputReader.join(1_000L);
-                throw new RemoteException("am start timed out after 15 seconds");
+                throw new IllegalStateException("am start timed out after 15 seconds");
             }
 
             outputReader.join(1_000L);
@@ -159,7 +159,7 @@ final class RootActivityLauncher {
                 outputReader.join(1_000L);
 
                 if (outputReader.isAlive()) {
-                    throw new RemoteException(
+                    throw new IllegalStateException(
                             "am output reader did not terminate after stream close"
                     );
                 }
@@ -167,13 +167,12 @@ final class RootActivityLauncher {
 
             Throwable readError = outputReadError.get();
             if (readError != null) {
-                RemoteException remoteError = new RemoteException(
+                throw new IllegalStateException(
                         "Failed to read am start output: "
                                 + readError.getClass().getName()
-                                + ": " + readError.getMessage()
+                                + ": " + readError.getMessage(),
+                        readError
                 );
-                remoteError.initCause(readError);
-                throw remoteError;
             }
 
             int exitCode = process.exitValue();
@@ -188,19 +187,22 @@ final class RootActivityLauncher {
                             + ", output=" + output);
 
             if (exitCode != 0) {
-                throw new RemoteException(
+                throw new IllegalStateException(
                         "am start failed, exitCode=" + exitCode
                                 + ": " + output
                 );
             }
 
-        } catch (RemoteException error) {
+        } catch (Error error) {
+            throw error;
+        } catch (RuntimeException error) {
             throw error;
         } catch (Throwable error) {
-            throw new RemoteException(
+            throw new IllegalStateException(
                     "Failed to execute am start: "
                             + error.getClass().getName()
-                            + ": " + error.getMessage()
+                            + ": " + error.getMessage(),
+                    error
             );
         } finally {
             if (process != null && process.isAlive()) {

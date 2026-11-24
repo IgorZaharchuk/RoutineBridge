@@ -70,7 +70,7 @@ class RootCoreDiagnosticsActivity : Activity() {
                 check(session == null) { "Session is already open" }
                 val start = SystemClock.elapsedRealtime()
                 session = RootCoreAccess.open(applicationContext, 15_000L)
-                "Binder connected; session=${session!!.sessionId}; " +
+                "Binder connected; session=${session!!.sessionId.take(8)}; " +
                     "elapsed=${SystemClock.elapsedRealtime() - start} ms"
             }
         }
@@ -106,7 +106,7 @@ class RootCoreDiagnosticsActivity : Activity() {
                     val denial = try {
                         denied.queryProvider(providerUri, null)
                         null
-                    } catch (error: android.os.RemoteException) {
+                    } catch (error: SecurityException) {
                         error
                     }
 
@@ -255,6 +255,27 @@ class RootCoreDiagnosticsActivity : Activity() {
             gravity = Gravity.TOP
         }
         content.addView(output, LinearLayout.LayoutParams(-1, -2))
+
+        val copyButton = Button(this).apply {
+            text = getString(android.R.string.copy)
+            isAllCaps = false
+            setOnClickListener {
+                val clipboard = getSystemService(CLIPBOARD_SERVICE)
+                    as android.content.ClipboardManager
+                clipboard.setPrimaryClip(
+                    android.content.ClipData.newPlainText(
+                        getString(R.string.diagnostics_title),
+                        output.text
+                    )
+                )
+            }
+        }
+        content.addView(
+            copyButton,
+            LinearLayout.LayoutParams(-1, dp(48)).apply {
+                topMargin = dp(6)
+            }
+        )
 
         addTestButton(content, getString(R.string.diagnostics_clear)) {
             output.text = getString(R.string.diagnostics_output_empty)

@@ -26,26 +26,29 @@ final class ExternalProviderQuery {
     ) throws RemoteException {
 
         if (uri == null || uri.trim().isEmpty()) {
-            throw new RemoteException("Provider URI is empty");
+            throw new IllegalArgumentException("Provider URI is empty");
         }
         if (uri.length() > MAX_URI_LENGTH || !uri.equals(uri.trim())) {
-            throw new RemoteException("Provider URI length or whitespace is invalid");
+            throw new IllegalArgumentException("Provider URI length or whitespace is invalid");
         }
 
         Uri parsedUri = Uri.parse(uri);
 
         if (!parsedUri.isHierarchical()
                 || !"content".equals(parsedUri.getScheme())) {
-            throw new RemoteException("Only hierarchical content:// Provider URIs are accepted");
+            throw new IllegalArgumentException("Only hierarchical content:// Provider URIs are accepted");
         }
 
         String authority = parsedUri.getAuthority();
-        if (authority == null || !policy.allowsProviderAuthority(authority)) {
-            throw new RemoteException("Provider authority is not allowed: " + authority);
+        if (authority == null) {
+            throw new IllegalArgumentException("Provider authority is missing");
+        }
+        if (!policy.allowsProviderAuthority(authority)) {
+            throw new SecurityException("Provider authority is not allowed: " + authority);
         }
 
         if (parsedUri.getUserInfo() != null || parsedUri.getPort() != -1) {
-            throw new RemoteException("Provider URI authority contains unsupported parts");
+            throw new IllegalArgumentException("Provider URI authority contains unsupported parts");
         }
 
         String encodedPath = parsedUri.getEncodedPath();
@@ -53,13 +56,13 @@ final class ExternalProviderQuery {
         String encodedFragment = parsedUri.getEncodedFragment();
 
         if (encodedPath != null && encodedPath.length() > MAX_PATH_LENGTH) {
-            throw new RemoteException("Provider URI path is too long");
+            throw new IllegalArgumentException("Provider URI path is too long");
         }
         if (encodedQuery != null && encodedQuery.length() > MAX_QUERY_LENGTH) {
-            throw new RemoteException("Provider URI query is too long");
+            throw new IllegalArgumentException("Provider URI query is too long");
         }
         if (encodedFragment != null) {
-            throw new RemoteException("Provider URI fragments are not accepted");
+            throw new IllegalArgumentException("Provider URI fragments are not accepted");
         }
 
         validateProjection(projection);
@@ -111,7 +114,7 @@ final class ExternalProviderQuery {
             }
 
             if (holder == null) {
-                throw new RemoteException(
+                throw new IllegalStateException(
                         "ActivityManager returned no Provider holder: " + authority
                 );
             }
@@ -129,7 +132,7 @@ final class ExternalProviderQuery {
             provider = providerField.get(holder);
 
             if (provider == null) {
-                throw new RemoteException(
+                throw new IllegalStateException(
                         "External Provider holder contains no provider: " + authority
                 );
             }
@@ -181,11 +184,11 @@ final class ExternalProviderQuery {
             );
 
             if (result == null) {
-                throw new RemoteException("ContentProvider returned a null Cursor");
+                throw new IllegalStateException("ContentProvider returned a null Cursor");
             }
 
             if (!(result instanceof Cursor)) {
-                throw new RemoteException(
+                throw new IllegalStateException(
                         "Unexpected Provider query result: " + result.getClass().getName()
                 );
             }
@@ -195,7 +198,7 @@ final class ExternalProviderQuery {
             String[] columns = cursor.getColumnNames();
 
             if (columns.length > MAX_RESULT_COLUMNS) {
-                throw new RemoteException(
+                throw new IllegalStateException(
                         "Provider result contains too many columns: " + columns.length
                 );
             }
@@ -204,7 +207,7 @@ final class ExternalProviderQuery {
 
             for (String column : columns) {
                 if (column == null) {
-                    throw new RemoteException(
+                    throw new IllegalStateException(
                             "Provider result contains a null column name"
                     );
                 }
@@ -212,7 +215,7 @@ final class ExternalProviderQuery {
                 estimatedResultBytes += 16L + column.length() * 3L;
 
                 if (estimatedResultBytes > MAX_RESULT_BYTES) {
-                    throw new RemoteException(
+                    throw new IllegalStateException(
                             "Provider result exceeds the maximum result size"
                     );
                 }
@@ -225,7 +228,7 @@ final class ExternalProviderQuery {
 
             while (cursor.moveToNext()) {
                 if (rows.size() >= MAX_RESULT_ROWS) {
-                    throw new RemoteException(
+                    throw new IllegalStateException(
                             "Provider result contains too many rows: "
                                     + (rows.size() + 1)
                     );
@@ -235,7 +238,7 @@ final class ExternalProviderQuery {
                         (long) (rows.size() + 1) * columns.length;
 
                 if (nextCellCount > MAX_RESULT_CELLS) {
-                    throw new RemoteException(
+                    throw new IllegalStateException(
                             "Provider result contains too many cells"
                     );
                 }
@@ -243,7 +246,7 @@ final class ExternalProviderQuery {
                 estimatedResultBytes += 64L + columns.length * 16L;
 
                 if (estimatedResultBytes > MAX_RESULT_BYTES) {
-                    throw new RemoteException(
+                    throw new IllegalStateException(
                             "Provider result exceeds the maximum result size"
                     );
                 }
@@ -262,7 +265,7 @@ final class ExternalProviderQuery {
                     estimatedResultBytes += 16L;
 
                     if (estimatedResultBytes > MAX_RESULT_BYTES) {
-                        throw new RemoteException(
+                        throw new IllegalStateException(
                                 "Provider result exceeds the maximum result size"
                         );
                     }
@@ -280,21 +283,26 @@ final class ExternalProviderQuery {
 
             return response;
 
-        } catch (RemoteException error) {
+        } catch (Error error) {
+            operationError = error;
+            android.util.Log.e(TAG, "External Provider query fatal error: authority=" + authority, error);
+            throw error;
+
+        } catch (RuntimeException error) {
             operationError = error;
             android.util.Log.e(TAG, "External Provider query failed: authority=" + authority, error);
             throw error;
 
         } catch (Throwable error) {
-            RemoteException remoteError = new RemoteException(
+            IllegalStateException wrapped = new IllegalStateException(
                     "External Provider query failed: "
-                            + error.getClass().getName() + ": " + error.getMessage()
+                            + error.getClass().getName() + ": " + error.getMessage(),
+                    error
             );
-            remoteError.initCause(error);
-            operationError = remoteError;
+            operationError = wrapped;
 
             android.util.Log.e(TAG, "External Provider query crashed: authority=" + authority, error);
-            throw remoteError;
+            throw wrapped;
 
         } finally {
             if (cursor != null) {
@@ -347,12 +355,13 @@ final class ExternalProviderQuery {
 
                     if (operationError != null) {
                         operationError.addSuppressed(releaseError);
+                    } else if (releaseError instanceof Error) {
+                        throw (Error) releaseError;
                     } else {
-                        RemoteException remoteError = new RemoteException(
-                                "Failed to release external Provider: " + authority
+                        throw new IllegalStateException(
+                                "Failed to release external Provider: " + authority,
+                                releaseError
                         );
-                        remoteError.initCause(releaseError);
-                        throw remoteError;
                     }
                 }
             }
@@ -370,18 +379,17 @@ final class ExternalProviderQuery {
     private static final int MAX_RESULT_CELLS = 10_000;
     private static final long MAX_RESULT_BYTES = 256L * 1024L;
 
-    private static void validateProjection(String[] projection)
-            throws RemoteException {
+    private static void validateProjection(String[] projection) {
         if (projection == null) return;
 
         if (projection.length > MAX_PROJECTION_COLUMNS) {
-            throw new RemoteException("Provider projection contains too many columns");
+            throw new IllegalArgumentException("Provider projection contains too many columns");
         }
 
         for (String column : projection) {
             if (column == null || column.trim().isEmpty()
                     || column.length() > MAX_COLUMN_NAME_LENGTH) {
-                throw new RemoteException("Provider projection contains an invalid column");
+                throw new IllegalArgumentException("Provider projection contains an invalid column");
             }
         }
     }
