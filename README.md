@@ -49,7 +49,7 @@ RoutineBridge не является приложением Samsung Electronics �
 
 ## Версия
 
-0.9.5
+0.9.7
 
 ---
 
@@ -104,4 +104,4 @@ RoutineBridge is not an official Samsung Electronics application and is not affi
 
 ## Version
 
-0.9.1
+0.9.7

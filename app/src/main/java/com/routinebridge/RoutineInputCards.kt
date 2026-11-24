@@ -17,7 +17,6 @@ object RoutineInputCards {
         inputs: List<RoutineInput>,
         routines: List<ManualRoutine>,
         collapsedGroups: MutableSet<Long>,
-        showInputCount: Boolean,
         emptyText: String,
         expandAllText: String,
         collapseAllText: String,
@@ -78,7 +77,7 @@ object RoutineInputCards {
                 else collapsedGroups.addAll(groups.keys)
                 render(
                     activity, container, inputs, routines, collapsedGroups,
-                    showInputCount, emptyText, expandAllText, collapseAllText,
+                    emptyText, expandAllText, collapseAllText,
                     actionTitle, onInputClick, onEditClick, expandedContent
                 )
             }
@@ -115,19 +114,17 @@ object RoutineInputCards {
                 LinearLayout.LayoutParams(0, -2, 1f)
             )
 
-            if (showInputCount) {
-                header.addView(text(
-                    activity.resources.getQuantityString(
-                        R.plurals.input_count, group.size, group.size
-                    ), 12f, secondary
-                ))
-            }
+            header.addView(text(
+                activity.resources.getQuantityString(
+                    R.plurals.input_count, group.size, group.size
+                ), 12f, secondary
+            ))
 
             header.setOnClickListener {
                 if (!collapsedGroups.add(uuid)) collapsedGroups.remove(uuid)
                 render(
                     activity, container, inputs, routines, collapsedGroups,
-                    showInputCount, emptyText, expandAllText, collapseAllText,
+                    emptyText, expandAllText, collapseAllText,
                     actionTitle, onInputClick, onEditClick, expandedContent
                 )
             }

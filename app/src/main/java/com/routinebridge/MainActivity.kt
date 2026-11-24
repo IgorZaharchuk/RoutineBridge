@@ -223,7 +223,6 @@ class MainActivity : Activity() {
             inputs = inputs,
             routines = routines,
             collapsedGroups = collapsedGroups,
-            showInputCount = true,
             emptyText = getString(R.string.empty_inputs),
             expandAllText = getString(R.string.expand_all),
             collapseAllText = getString(R.string.collapse_all),

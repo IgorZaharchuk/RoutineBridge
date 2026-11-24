@@ -9,24 +9,6 @@ public final class RootCore {
 
     private RootCore() {}
 
-    public static RootCoreSession open(Context context) throws Exception {
-        return open(context, RootCorePolicy.denyAll(), 15_000L);
-    }
-
-    public static RootCoreSession open(
-            Context context,
-            long timeoutMs
-    ) throws Exception {
-        return open(context, RootCorePolicy.denyAll(), timeoutMs);
-    }
-
-    public static RootCoreSession open(
-            Context context,
-            RootCorePolicy policy
-    ) throws Exception {
-        return open(context, policy, 15_000L);
-    }
-
     public static RootCoreSession open(
             Context context,
             RootCorePolicy policy,

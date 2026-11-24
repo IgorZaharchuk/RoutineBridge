@@ -6,7 +6,7 @@ import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.graphics.drawable.Icon
 
-class RoutineShortcutPublisher(private val context: Context) {
+internal class RoutineShortcutPublisher(private val context: Context) {
     private val messages = AppLocale.wrap(context)
 
     fun publishAll(

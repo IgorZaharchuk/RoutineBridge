@@ -73,11 +73,6 @@ public final class RootCorePolicy {
         return authority != null && providerAuthorities.contains(authority);
     }
 
-    public boolean allowsActivity(ComponentName component) {
-        return component != null
-                && activityRules.containsKey(component.flattenToString());
-    }
-
     public boolean allowsActivity(Intent intent) {
         if (intent == null || intent.getComponent() == null) {
             return false;
@@ -261,20 +256,6 @@ public final class RootCorePolicy {
             }
             providers.add(authority);
             return this;
-        }
-
-        /**
-         * Compatibility overload. It permits only an Intent with no action,
-         * zero flags and no extras. Prefer the complete overload.
-         */
-        @Deprecated
-        public Builder allowActivity(ComponentName component) {
-            return allowActivity(
-                    component,
-                    null,
-                    0,
-                    Collections.emptyMap()
-            );
         }
 
         public Builder allowActivity(

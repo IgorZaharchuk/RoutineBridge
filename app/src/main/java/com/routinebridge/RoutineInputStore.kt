@@ -4,7 +4,7 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-class RoutineInputStore(context: Context) {
+internal class RoutineInputStore(context: Context) {
     private val prefs = context.getSharedPreferences("routine_inputs", Context.MODE_PRIVATE)
     private val messages = AppLocale.wrap(context)
 
