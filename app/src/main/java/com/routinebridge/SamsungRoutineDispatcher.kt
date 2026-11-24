@@ -152,7 +152,7 @@ internal object SamsungRoutineDispatcher {
                 "DISPATCH_START request=$requestId " +
                     "related=${start.requestIds.drop(1).joinToString(",")} " +
                     "uuid=$uuid transform=${start.command.transform} " +
-                    "rootSession=${session.sessionId}"
+                    "rootSession=${session.sessionId.take(8)}"
             )
 
             while (true) {

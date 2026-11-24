@@ -110,7 +110,7 @@ public final class RootCoreSession implements AutoCloseable {
             public void onReceive(Context ignored, Intent intent) {
                 android.util.Log.i(
                         "RoutineBridgeRootCore",
-                        "ROOTCORE_BROADCAST_RECEIVED session=" + sessionId
+                        "ROOTCORE_BROADCAST_RECEIVED session=" + sessionId.substring(0, 8)
                                 + " thread=" + Thread.currentThread().getName()
                 );
 
@@ -170,7 +170,8 @@ public final class RootCoreSession implements AutoCloseable {
 
                     android.util.Log.i(
                             "RoutineBridgeRootCore",
-                            "ROOTCORE_BROADCAST_ACCEPTED session=" + sessionId
+                            "ROOTCORE_BROADCAST_ACCEPTED session="
+                                    + sessionId.substring(0, 8)
                     );
 
                     IBinder.DeathRecipient deathRecipient = () -> {
@@ -320,7 +321,7 @@ public final class RootCoreSession implements AutoCloseable {
         intent.addFlags(flags);
         if (extras != null) intent.putExtras(extras);
 
-        callRemote("launchActivity", () -> {
+        callRemote("launchActivity", 20_000L, () -> {
             remote.launchActivity(intent);
             return null;
         });
@@ -335,8 +336,16 @@ public final class RootCoreSession implements AutoCloseable {
         return exception;
     }
 
+    private <T> T callRemote(
+            String operation,
+            Callable<T> call
+    ) throws RemoteException {
+        return callRemote(operation, BINDER_CALL_TIMEOUT_MS, call);
+    }
+
     private synchronized <T> T callRemote(
             String operation,
+            long timeoutMs,
             Callable<T> call
     ) throws RemoteException {
         ensureOpen();
@@ -353,13 +362,13 @@ public final class RootCoreSession implements AutoCloseable {
         }
 
         try {
-            return future.get(BINDER_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException error) {
             unusable = true;
             future.cancel(true);
             throw new RemoteException(
                     "Root Core Binder call timed out after "
-                            + BINDER_CALL_TIMEOUT_MS + " ms: " + operation
+                            + timeoutMs + " ms: " + operation
             );
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
@@ -401,18 +410,13 @@ public final class RootCoreSession implements AutoCloseable {
         if (closed) return;
         closed = true;
 
-        if (!unusable) {
-            try {
-                binderExecutor.execute(() -> {
-                    try {
-                        remote.close();
-                    } catch (Throwable ignored) {
-                    }
-                });
-            } catch (RejectedExecutionException ignored) {
-            }
+        // AIDL close() is oneway: send it directly, even after a Binder timeout.
+        // Do not queue it behind a possibly blocked synchronous Binder call.
+        try {
+            remote.close();
+        } catch (Throwable ignored) {
         }
-        binderExecutor.shutdown();
+        binderExecutor.shutdownNow();
 
         try {
             if (deathRecipient != null) {
