@@ -121,17 +121,35 @@ internal class RoutineActionExecutor(
         )
 
         val deadline = SystemClock.elapsedRealtime() + CONFIRMATION_TIMEOUT_MS
-        var actual = repository.load(session).firstOrNull {
-            it.uuid == routineUuid
-        }?.isRunning
+        var providerReadFailed = false
+
+        fun readActualState(): Boolean? {
+            return try {
+                repository.load(session).firstOrNull {
+                    it.uuid == routineUuid
+                }?.isRunning
+            } catch (error: Exception) {
+                if (!providerReadFailed) {
+                    providerReadFailed = true
+                    Log.w(
+                        LOG_TAG,
+                        "PROVIDER_CONFIRMATION_READ_FAILED " +
+                            "request=${requestIds.firstOrNull() ?: "unknown"} " +
+                            "uuid=$routineUuid",
+                        error
+                    )
+                }
+                null
+            }
+        }
+
+        var actual = readActualState()
 
         while (actual != targetState &&
             SystemClock.elapsedRealtime() < deadline
         ) {
             Thread.sleep(PROVIDER_POLL_INTERVAL_MS)
-            actual = repository.load(session).firstOrNull {
-                it.uuid == routineUuid
-            }?.isRunning
+            actual = readActualState()
         }
 
         if (actual == targetState) {
