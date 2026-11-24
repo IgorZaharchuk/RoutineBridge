@@ -160,6 +160,14 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(0, -2, 1f)
         )
         header.addView(
+            button(getString(R.string.application_log_button)) {
+                startActivity(Intent(this, ApplicationLogActivity::class.java))
+            },
+            LinearLayout.LayoutParams(dp(76), dp(40)).apply {
+                marginEnd = dp(6)
+            }
+        )
+        header.addView(
             button(getString(R.string.language_switch)) {
                 getSharedPreferences("settings", MODE_PRIVATE)
                     .edit()
@@ -167,7 +175,7 @@ class MainActivity : Activity() {
                     .apply()
                 recreate()
             },
-            LinearLayout.LayoutParams(-2, dp(40))
+            LinearLayout.LayoutParams(dp(76), dp(40))
         )
         content.addView(header, matchWrap().apply { bottomMargin = dp(4) })
         content.addView(text(getString(R.string.manual_routines_title), 14f, secondary)
@@ -185,15 +193,6 @@ class MainActivity : Activity() {
             matchWrap().apply { bottomMargin = dp(8) }
         )
         content.addView(button(getString(R.string.refresh_routines)) { refreshRoutines() }, matchWrap().apply { bottomMargin = dp(8) })
-        content.addView(
-            button(getString(R.string.application_log_title)) {
-                startActivity(
-                    Intent(this, ApplicationLogActivity::class.java)
-                )
-            },
-            matchWrap().apply { bottomMargin = dp(8) }
-        )
-
         content.addView(text(getString(R.string.my_inputs), 19f, white, true)
             .also { it.setPadding(0, dp(8), 0, dp(10)) })
         inputContainer = LinearLayout(this).apply {
@@ -476,14 +475,6 @@ class MainActivity : Activity() {
             textSize = size
             setTextColor(color)
             if (bold) setTypeface(typeface, Typeface.BOLD)
-        }
-
-    private fun dialogButton(label: String, action: () -> Unit) =
-        Button(this).apply {
-            text = label
-            styleButton(this, dialogVariant)
-            minHeight = dp(48)
-            setOnClickListener { action() }
         }
 
     private fun themedSpinnerAdapter(items: List<String>): ArrayAdapter<String> =

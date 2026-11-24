@@ -50,12 +50,6 @@
     <string name="routine_disabled">Routine “%1$s” is disabled in Samsung</string>
     <string name="routine_enabled_state_unknown">Could not determine whether the routine is enabled in Samsung</string>
     <string name="routine_state_unknown">Could not determine routine state</string>
-    <string name="routine_already_state">Routine “%1$s” is already %2$s</string>
-    <string name="state_enabled">enabled</string>
-    <string name="state_disabled">disabled</string>
-    <string name="state_unknown">unknown</string>
-    <string name="routine_state_not_confirmed">The new routine state was not confirmed. Expected: %1$s; actual: %2$s</string>
-    <string name="routine_action_success">Routine “%1$s”: %2$s</string>
     <string name="store_invalid_item">Corrupted settings entry: item %1$d is not an object</string>
     <string name="store_missing_id">Corrupted settings entry: ID is missing</string>
     <string name="store_missing_input_name">Corrupted settings entry: input name is missing</string>
@@ -71,7 +65,6 @@
     <string name="provider_missing_name_column">Samsung Provider is missing the name column</string>
     <string name="provider_invalid_uuid">Samsung Provider: invalid UUID in row %1$d</string>
     <string name="provider_empty_name">Samsung Provider: empty name in row %1$d</string>
-    <string name="dynamic_shortcut_limit">Android allows no more than %1$d dynamic shortcuts</string>
     <plurals name="input_count">
         <item quantity="one">%1$d input</item>
         <item quantity="other">%1$d inputs</item>
@@ -81,9 +74,9 @@
     <string name="routine_service_channel_description">Execution of Samsung routine commands</string>
     <string name="routine_service_notification_title">RoutineBridge</string>
     <string name="routine_service_notification_text">Executing Samsung routines</string>
-    <string name="diagnostics_title">Root Core diagnostics</string>
 
 
+    <string name="application_log_button">Log</string>
     <string name="application_log_title">Application log</string>
     <string name="application_log_copy">Copy entire log</string>
     <string name="application_log_refresh">Refresh log</string>
