@@ -1,5 +1,9 @@
 # RoutineBridge
 
+<img width="1011" height="2307" alt="14821" src="https://github.com/user-attachments/assets/5da9ffad-a4d4-4c42-9d40-9050b70a696e" />
+
+<img width="1006" height="2269" alt="14822" src="https://github.com/user-attachments/assets/83a572a4-bcd1-4525-8c14-4269a32ddd91" />
+
 **Русский | [English](#english)**
 
 ## О приложении
