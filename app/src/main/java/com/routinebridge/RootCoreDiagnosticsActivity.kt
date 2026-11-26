@@ -108,12 +108,14 @@ class RootCoreDiagnosticsActivity : Activity() {
                         Bundle()
                     )
 
-                    val inspected = root.invokeObject(
+                    val invocation = root.invokeObject(
                         objectId,
                         "inspectFile",
                         arrayOf("java.lang.String"),
                         Bundle().apply { putString("arg0", path) }
                     )
+                    val inspected = invocation.getBundle("value_bundle")
+                        ?: error("RootCore returned no Bundle result")
                     val uid = inspected.getInt("uid", -1)
                     val pid = inspected.getInt("pid", -1)
                     val bytes = inspected.getInt("bytes_read", 0)
