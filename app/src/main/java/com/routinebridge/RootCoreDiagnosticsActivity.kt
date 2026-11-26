@@ -358,29 +358,37 @@ class RootCoreDiagnosticsActivity : Activity() {
                     first.releaseObject(objectA)
                     firstObjectId = null
 
-                    val doubleReleaseRejected = try {
-                        first.releaseObject(objectA)
-                        false
-                    } catch (_: android.os.RemoteException) {
-                        true
-                    }
-                    check(doubleReleaseRejected) {
-                        "Double release was not rejected"
-                    }
-
-                    val releasedInvocationRejected = try {
+                    val invokeAfterRelease = try {
                         first.invokeObject(
                             objectA,
                             "getInvocationCount",
                             emptyArray(),
                             Bundle()
                         )
-                        false
-                    } catch (_: android.os.RemoteException) {
-                        true
+                        "RETURNED normally"
+                    } catch (error: Throwable) {
+                        "THREW ${error.javaClass.name}: ${error.message}"
                     }
-                    check(releasedInvocationRejected) {
-                        "Released object remained callable"
+
+                    val secondRelease = try {
+                        first.releaseObject(objectA)
+                        "RETURNED normally"
+                    } catch (error: Throwable) {
+                        "THREW ${error.javaClass.name}: ${error.message}"
+                    }
+
+                    check(invokeAfterRelease.startsWith(
+                        "THREW android.os.RemoteException"
+                    )) {
+                        "INVOKE AFTER RELEASE: $invokeAfterRelease; " +
+                            "SECOND RELEASE: $secondRelease"
+                    }
+
+                    check(secondRelease.startsWith(
+                        "THREW android.os.RemoteException"
+                    )) {
+                        "DOUBLE RELEASE: $secondRelease; " +
+                            "INVOKE AFTER RELEASE: $invokeAfterRelease"
                     }
 
                     val survivingState = first.invokeObject(
