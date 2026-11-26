@@ -290,19 +290,61 @@ public final class RootCoreSession implements AutoCloseable {
         return callRemote("ping", () -> remote.ping());
     }
 
-    public Bundle runClassLoadingProbe() throws RemoteException {
-        Bundle result = callRemote(
-                "runClassLoadingProbe",
-                () -> remote.runClassLoadingProbe()
-        );
-
-        if (result == null) {
-            throw new RemoteException(
-                    "Root Core server returned a null class loading probe result"
-            );
+    public String createObject(
+            String className,
+            String[] constructorTypes,
+            Bundle arguments
+    ) throws RemoteException {
+        if (className == null || className.isBlank()) {
+            throw new IllegalArgumentException("Class name is empty");
         }
+        String objectId = callRemote(
+                "createObject",
+                () -> remote.createObject(
+                        className,
+                        constructorTypes == null ? new String[0] : constructorTypes,
+                        arguments == null ? new Bundle() : arguments
+                )
+        );
+        if (objectId == null || objectId.isBlank()) {
+            throw new RemoteException("Root Core returned an empty object ID");
+        }
+        return objectId;
+    }
 
+    public Bundle invokeObject(
+            String objectId,
+            String methodName,
+            String[] parameterTypes,
+            Bundle arguments
+    ) throws RemoteException {
+        if (objectId == null || objectId.isBlank()
+                || methodName == null || methodName.isBlank()) {
+            throw new IllegalArgumentException("Object ID or method name is empty");
+        }
+        Bundle result = callRemote(
+                "invokeObject",
+                () -> remote.invokeObject(
+                        objectId,
+                        methodName,
+                        parameterTypes == null ? new String[0] : parameterTypes,
+                        arguments == null ? new Bundle() : arguments
+                )
+        );
+        if (result == null) {
+            throw new RemoteException("Root Core returned a null invocation result");
+        }
         return result;
+    }
+
+    public void releaseObject(String objectId) throws RemoteException {
+        if (objectId == null || objectId.isBlank()) {
+            throw new IllegalArgumentException("Object ID is empty");
+        }
+        callRemote("releaseObject", () -> {
+            remote.releaseObject(objectId);
+            return null;
+        });
     }
 
     public Bundle queryProvider(Uri uri, String[] projection) throws RemoteException {

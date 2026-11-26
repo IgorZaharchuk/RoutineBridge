@@ -48,10 +48,12 @@ public final class RootCorePolicy {
 
     private final Set<String> providerAuthorities;
     private final Map<String, ActivityRule> activityRules;
+    private final boolean executeClientCode;
 
     private RootCorePolicy(
             Set<String> providerAuthorities,
-            Map<String, ActivityRule> activityRules
+            Map<String, ActivityRule> activityRules,
+            boolean executeClientCode
     ) {
         this.providerAuthorities = Collections.unmodifiableSet(
                 new LinkedHashSet<>(providerAuthorities)
@@ -59,6 +61,7 @@ public final class RootCorePolicy {
         this.activityRules = Collections.unmodifiableMap(
                 new LinkedHashMap<>(activityRules)
         );
+        this.executeClientCode = executeClientCode;
     }
 
     public static Builder builder() {
@@ -67,6 +70,10 @@ public final class RootCorePolicy {
 
     public static RootCorePolicy denyAll() {
         return builder().build();
+    }
+
+    public boolean allowsClientCodeExecution() {
+        return executeClientCode;
     }
 
     public boolean allowsProviderAuthority(String authority) {
@@ -165,6 +172,7 @@ public final class RootCorePolicy {
 
             json.put("providers", providers);
             json.put("activities", activities);
+            json.put("executeClientCode", executeClientCode);
 
             return Base64.encodeToString(
                     json.toString().getBytes(StandardCharsets.UTF_8),
@@ -193,6 +201,9 @@ public final class RootCorePolicy {
             JSONArray activities = json.getJSONArray("activities");
 
             Builder builder = builder();
+            if (json.optBoolean("executeClientCode", false)) {
+                builder.allowClientCodeExecution();
+            }
 
             for (int i = 0; i < providers.length(); i++) {
                 builder.allowProviderAuthority(providers.getString(i));
@@ -244,6 +255,12 @@ public final class RootCorePolicy {
         private final Set<String> providers = new LinkedHashSet<>();
         private final Map<String, ActivityRule> activities =
                 new LinkedHashMap<>();
+        private boolean executeClientCode;
+
+        public Builder allowClientCodeExecution() {
+            this.executeClientCode = true;
+            return this;
+        }
 
         public Builder allowProviderAuthority(String authority) {
             if (authority == null || authority.isBlank()
@@ -303,7 +320,7 @@ public final class RootCorePolicy {
         }
 
         public RootCorePolicy build() {
-            return new RootCorePolicy(providers, activities);
+            return new RootCorePolicy(providers, activities, executeClientCode);
         }
     }
 }

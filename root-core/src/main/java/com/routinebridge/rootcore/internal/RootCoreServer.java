@@ -11,6 +11,13 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.UserHandle;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
 import com.routinebridge.rootcore.RootCorePolicy;
 import com.routinebridge.rootcore.ipc.IRootCoreManager;
 
@@ -25,6 +32,8 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
     private final String sessionId;
     private final RootCorePolicy policy;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final ConcurrentMap<String, Object> objects =
+            new ConcurrentHashMap<>();
 
     private IBinder clientToken;
     private IBinder.DeathRecipient deathRecipient;
@@ -119,51 +128,176 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
         RootActivityLauncher.launch(intent, clientUid, policy);
     }
 
-    @Override
-    public Bundle runClassLoadingProbe() throws RemoteException {
+    private void enforceClientCodePermission() {
         enforceConnectedClient();
-
-        if (Process.myUid() != 0) {
+        if (!policy.allowsClientCodeExecution()) {
             throw new SecurityException(
-                    "Class loading probe requires root UID; actual UID="
-                            + Process.myUid()
+                    "Client code execution is not allowed by RootCorePolicy"
             );
         }
+        if (Process.myUid() != 0) {
+            throw new SecurityException("Client code execution requires UID 0");
+        }
+    }
 
+    private static Class<?> resolveType(String name) throws ClassNotFoundException {
+        if (name == null) throw new IllegalArgumentException("Type name is null");
+        switch (name) {
+            case "boolean": return boolean.class;
+            case "int": return int.class;
+            case "long": return long.class;
+            case "float": return float.class;
+            case "double": return double.class;
+            case "java.lang.String": return String.class;
+            case "android.os.Bundle": return Bundle.class;
+            default:
+                throw new IllegalArgumentException("Unsupported parameter type: " + name);
+        }
+    }
+
+    private static Object readArgument(Bundle args, int index, Class<?> type) {
+        String key = "arg" + index;
+        if (!args.containsKey(key)) {
+            throw new IllegalArgumentException("Missing argument: " + key);
+        }
+        if (type == boolean.class) return args.getBoolean(key);
+        if (type == int.class) return args.getInt(key);
+        if (type == long.class) return args.getLong(key);
+        if (type == float.class) return args.getFloat(key);
+        if (type == double.class) return args.getDouble(key);
+        if (type == String.class) return args.getString(key);
+        if (type == Bundle.class) return args.getBundle(key);
+        throw new IllegalArgumentException("Unsupported argument type: " + type);
+    }
+
+    private static Object[] decodeArguments(String[] names, Bundle args)
+            throws ClassNotFoundException {
+        if (names == null) names = new String[0];
+        if (args == null) args = new Bundle();
+        Object[] values = new Object[names.length];
+        for (int i = 0; i < names.length; i++) {
+            values[i] = readArgument(args, i, resolveType(names[i]));
+        }
+        return values;
+    }
+
+    private static Bundle encodeResult(Object value, Class<?> returnType) {
+        Bundle result = new Bundle();
+        result.putString("return_type", returnType.getName());
+        if (returnType == void.class) {
+            result.putString("value_kind", "void");
+        } else if (returnType == boolean.class || returnType == Boolean.class) {
+            result.putString("value_kind", "boolean");
+            result.putBoolean("value_boolean", (Boolean) value);
+        } else if (returnType == int.class || returnType == Integer.class) {
+            result.putString("value_kind", "int");
+            result.putInt("value_int", (Integer) value);
+        } else if (returnType == long.class || returnType == Long.class) {
+            result.putString("value_kind", "long");
+            result.putLong("value_long", (Long) value);
+        } else if (returnType == float.class || returnType == Float.class) {
+            result.putString("value_kind", "float");
+            result.putFloat("value_float", (Float) value);
+        } else if (returnType == double.class || returnType == Double.class) {
+            result.putString("value_kind", "double");
+            result.putDouble("value_double", (Double) value);
+        } else if (returnType == String.class) {
+            result.putString("value_kind", "string");
+            result.putString("value_string", (String) value);
+        } else if (returnType == Bundle.class) {
+            result.putString("value_kind", "bundle");
+            result.putBundle("value_bundle", (Bundle) value);
+        } else {
+            throw new IllegalArgumentException(
+                    "Unsupported return type: " + returnType.getName()
+            );
+        }
+        return result;
+    }
+
+    @Override
+    public String createObject(
+            String className,
+            String[] constructorTypes,
+            Bundle arguments
+    ) throws RemoteException {
+        enforceClientCodePermission();
         try {
-            ClassLoader appClassLoader = context.getClassLoader();
-
-            Class<?> probeClass = appClassLoader.loadClass(
-                    "com.routinebridge.RootCoreClassLoadingProbe"
-            );
-
-            Object probe = probeClass.getDeclaredConstructor().newInstance();
-
-            Object value = probeClass
-                    .getDeclaredMethod("inspect", Context.class)
-                    .invoke(probe, context);
-
-            if (!(value instanceof Bundle)) {
-                throw new IllegalStateException(
-                        "Probe returned an unexpected result"
-                );
+            if (className == null || !className.matches("[A-Za-z_$][A-Za-z0-9_$.]*")) {
+                throw new IllegalArgumentException("Invalid client class name");
             }
-
-            Bundle result = (Bundle) value;
-            result.putBoolean(
-                    "same_loader_as_server",
-                    probeClass.getClassLoader() == getClass().getClassLoader()
-            );
-
-            return result;
-
+            Class<?> type = context.getClassLoader().loadClass(className);
+            Class<?>[] parameterTypes = new Class<?>[
+                    constructorTypes == null ? 0 : constructorTypes.length
+            ];
+            for (int i = 0; i < parameterTypes.length; i++) {
+                parameterTypes[i] = resolveType(constructorTypes[i]);
+            }
+            Constructor<?> constructor = type.getConstructor(parameterTypes);
+            Object[] values = decodeArguments(constructorTypes, arguments);
+            Object instance = constructor.newInstance(values);
+            String id = UUID.randomUUID().toString();
+            objects.put(id, instance);
+            return id;
         } catch (Throwable error) {
-            RemoteException remoteError = new RemoteException(
-                    "Root Core class loading probe failed: " + error
-            );
-            remoteError.initCause(error);
-            throw remoteError;
+            throw asRemoteException("Create client object failed", error);
         }
+    }
+
+    @Override
+    public Bundle invokeObject(
+            String objectId,
+            String methodName,
+            String[] parameterTypes,
+            Bundle arguments
+    ) throws RemoteException {
+        enforceClientCodePermission();
+        try {
+            Object instance = objects.get(objectId);
+            if (instance == null) {
+                throw new IllegalArgumentException("Unknown or released object ID");
+            }
+            if (methodName == null || !methodName.matches("[A-Za-z_$][A-Za-z0-9_$]*")) {
+                throw new IllegalArgumentException("Invalid method name");
+            }
+            Class<?>[] types = new Class<?>[
+                    parameterTypes == null ? 0 : parameterTypes.length
+            ];
+            for (int i = 0; i < types.length; i++) {
+                types[i] = resolveType(parameterTypes[i]);
+            }
+            Method method = instance.getClass().getMethod(methodName, types);
+            if (method.getDeclaringClass() == Object.class) {
+                throw new SecurityException("Object base methods are not callable");
+            }
+            Object[] values = decodeArguments(parameterTypes, arguments);
+            Object value = method.invoke(instance, values);
+            return encodeResult(value, method.getReturnType());
+        } catch (Throwable error) {
+            throw asRemoteException("Invoke client object failed", error);
+        }
+    }
+
+    @Override
+    public void releaseObject(String objectId) throws RemoteException {
+        enforceClientCodePermission();
+        if (objectId == null || objects.remove(objectId) == null) {
+            throw new RemoteException("Unknown or already released object ID");
+        }
+    }
+
+    private static RemoteException asRemoteException(String message, Throwable error) {
+        Throwable cause = error;
+        if (cause instanceof InvocationTargetException
+                && ((InvocationTargetException) cause).getCause() != null) {
+            cause = ((InvocationTargetException) cause).getCause();
+        }
+        RemoteException result = new RemoteException(
+                message + ": " + cause.getClass().getSimpleName()
+                        + ": " + String.valueOf(cause.getMessage())
+        );
+        result.initCause(cause);
+        return result;
     }
 
     @Override
@@ -199,6 +333,7 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
         closed = true;
 
         handler.removeCallbacks(idleShutdown);
+        objects.clear();
 
         if (clientToken != null && deathRecipient != null) {
             try {

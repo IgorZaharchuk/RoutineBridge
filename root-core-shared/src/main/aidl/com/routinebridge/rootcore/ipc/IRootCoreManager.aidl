@@ -8,7 +8,9 @@ interface IRootCoreManager {
     int ping();
     void connect(IBinder client);
     Bundle query(String uri, in String[] projection);
-    Bundle runClassLoadingProbe();
+    String createObject(String className, in String[] constructorTypes, in Bundle arguments);
+    Bundle invokeObject(String objectId, String methodName, in String[] parameterTypes, in Bundle arguments);
+    void releaseObject(String objectId);
     void launchActivity(in Intent intent);
     oneway void close();
 }

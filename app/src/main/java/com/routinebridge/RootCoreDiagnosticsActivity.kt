@@ -83,50 +83,87 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        addTestButton(tests, "CLASS LOADING / ROOT PROCESS") {
-            runTest("CLIENT CLASS LOADING IN ROOT PROCESS") {
-                val probeSession = RootCore.open(
-                    applicationContext,
-                    RootCorePolicy.denyAll(),
-                    15_000L
-                )
+        addTestButton(tests, "CLIENT OBJECTS / ROOT EXECUTION") {
+            runTest("CREATE / INVOKE / STATE / RELEASE") {
+                val path = "/data/system/packages.xml"
 
+                // Запускаем тот же клиентский класс в обычном UID приложения.
+                val local = com.routinebridge.RootCoreObjectProbe()
+                val localResult = local.inspectFile(path)
+                val localUid = localResult.getInt("uid", -1)
+                check(localUid != 0) {
+                    "Local probe unexpectedly runs as root"
+                }
+
+                val policy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+                val root = RootCore.open(applicationContext, policy, 15_000L)
+
+                var objectId: String? = null
                 try {
-                    val result = probeSession.runClassLoadingProbe()
+                    objectId = root.createObject(
+                        "com.routinebridge.RootCoreObjectProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
 
-                    val uid = result.getInt("uid", -1)
-                    val pid = result.getInt("pid", -1)
-                    val className = result.getString("class_name")
-                    val classLoader = result.getString("class_loader")
-                    val packageName = result.getString("context_package")
-                    val sameContextLoader =
-                        result.getBoolean("same_loader_as_context")
-                    val sameServerLoader =
-                        result.getBoolean("same_loader_as_server")
+                    val inspected = root.invokeObject(
+                        objectId,
+                        "inspectFile",
+                        arrayOf("java.lang.String"),
+                        Bundle().apply { putString("arg0", path) }
+                    )
+                    val uid = inspected.getInt("uid", -1)
+                    val pid = inspected.getInt("pid", -1)
+                    val bytes = inspected.getInt("bytes_read", 0)
+                    val readError = inspected.getString("read_error")
 
-                    check(uid == 0) {
-                        "Expected root UID 0, received $uid"
-                    }
-                    check(pid > 0) {
-                        "Invalid root process PID: $pid"
-                    }
-                    check(sameContextLoader) {
-                        "Probe class was not loaded by application Context ClassLoader"
-                    }
-                    check(sameServerLoader) {
-                        "Probe and RootCoreServer use different ClassLoaders"
+                    check(uid == 0) { "Expected UID 0, received $uid" }
+                    check(pid > 0) { "Invalid root PID: $pid" }
+
+                    val state = root.invokeObject(
+                        objectId,
+                        "getInvocationCount",
+                        emptyArray(),
+                        Bundle()
+                    )
+                    val count = state.getInt("value_int", -1)
+                    check(count == 1) {
+                        "Object state was not retained; invocation count=$count"
                     }
 
-                    "UID=$uid; PID=$pid\n" +
-                        "Class=$className\n" +
-                        "Package=$packageName\n" +
-                        "ClassLoader=$classLoader\n" +
-                        "Context ClassLoader: MATCH\n" +
-                        "Server ClassLoader: MATCH"
+                    val releasedId = objectId
+                    root.releaseObject(releasedId)
+                    objectId = null
+
+                    val releasedRejected = try {
+                        root.invokeObject(
+                            releasedId,
+                            "getInvocationCount",
+                            emptyArray(),
+                            Bundle()
+                        )
+                        false
+                    } catch (_: android.os.RemoteException) {
+                        true
+                    }
+                    check(releasedRejected) {
+                        "Invocation with unknown object ID was accepted"
+                    }
+
+                    "Local UID=$localUid; Root UID=$uid; PID=$pid\n" +
+                        "File=$path; bytes read=$bytes\n" +
+                        "Read error=${readError ?: "none"}\n" +
+                        "Same object retained state: count=$count\n" +
+                        "Object released; unknown ID rejected"
                 } finally {
-                    probeSession.close()
-                    check(probeSession.awaitTermination(5_000L)) {
-                        "Probe root process did not terminate"
+                    if (objectId != null) {
+                        runCatching { root.releaseObject(objectId) }
+                    }
+                    root.close()
+                    check(root.awaitTermination(5_000L)) {
+                        "Root object session did not terminate"
                     }
                 }
             }
