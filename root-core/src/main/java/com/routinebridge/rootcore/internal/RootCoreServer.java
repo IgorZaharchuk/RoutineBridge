@@ -252,9 +252,17 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
             Bundle arguments
     ) throws RemoteException {
         enforceClientCodePermission();
+        android.util.Log.i(TAG,
+                "OBJECT_INVOKE_BEGIN session=" + sessionId.substring(0, 8)
+                        + " pid=" + Process.myPid()
+                        + " id=" + shortObjectId(objectId)
+                        + " exists=" + objects.containsKey(objectId));
         try {
             Object instance = objects.get(objectId);
             if (instance == null) {
+                android.util.Log.w(TAG,
+                        "OBJECT_INVOKE_MISSING session=" + sessionId.substring(0, 8)
+                                + " id=" + shortObjectId(objectId));
                 throw new IllegalArgumentException("Unknown or released object ID");
             }
             if (methodName == null || !methodName.matches("[A-Za-z_$][A-Za-z0-9_$]*")) {
@@ -272,7 +280,12 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
             }
             Object[] values = decodeArguments(parameterTypes, arguments);
             Object value = method.invoke(instance, values);
-            return encodeResult(value, method.getReturnType());
+            Bundle result = encodeResult(value, method.getReturnType());
+            android.util.Log.i(TAG,
+                    "OBJECT_INVOKE_SUCCESS session=" + sessionId.substring(0, 8)
+                            + " id=" + shortObjectId(objectId)
+                            + " resultNull=" + (result == null));
+            return result;
         } catch (Throwable error) {
             throw asRemoteException("Invoke client object failed", error);
         }
@@ -281,9 +294,34 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
     @Override
     public void releaseObject(String objectId) throws RemoteException {
         enforceClientCodePermission();
-        if (objectId == null || objects.remove(objectId) == null) {
+
+        boolean existedBefore = objectId != null && objects.containsKey(objectId);
+        android.util.Log.i(TAG,
+                "OBJECT_RELEASE_BEGIN session=" + sessionId.substring(0, 8)
+                        + " pid=" + Process.myPid()
+                        + " id=" + shortObjectId(objectId)
+                        + " exists=" + existedBefore
+                        + " size=" + objects.size());
+
+        Object removed = objectId == null ? null : objects.remove(objectId);
+
+        android.util.Log.i(TAG,
+                "OBJECT_RELEASE_RESULT session=" + sessionId.substring(0, 8)
+                        + " id=" + shortObjectId(objectId)
+                        + " removed=" + (removed != null)
+                        + " size=" + objects.size());
+
+        if (removed == null) {
+            android.util.Log.w(TAG,
+                    "OBJECT_RELEASE_REJECTED session=" + sessionId.substring(0, 8)
+                            + " id=" + shortObjectId(objectId));
             throw new RemoteException("Unknown or already released object ID");
         }
+    }
+
+    private static String shortObjectId(String objectId) {
+        if (objectId == null) return "null";
+        return objectId.substring(0, Math.min(8, objectId.length()));
     }
 
     private static RemoteException asRemoteException(String message, Throwable error) {
