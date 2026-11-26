@@ -39,22 +39,24 @@ public final class RootCoreConcurrencyProbe {
                 maximum = active;
             }
             LOCK.notifyAll();
-
-            long deadline = System.currentTimeMillis() + 5_000L;
-
-            while (active < expected) {
-                long remaining = deadline - System.currentTimeMillis();
-                if (remaining <= 0L) {
-                    throw new IllegalStateException(
-                        "Concurrency barrier timed out: expected="
-                            + expected + ", active=" + active
-                    );
-                }
-                LOCK.wait(remaining);
-            }
         }
 
         try {
+            synchronized (LOCK) {
+                long deadline = System.currentTimeMillis() + 5_000L;
+
+                while (active < expected) {
+                    long remaining = deadline - System.currentTimeMillis();
+                    if (remaining <= 0L) {
+                        throw new IllegalStateException(
+                            "Concurrency barrier timed out: expected="
+                                + expected + ", active=" + active
+                        );
+                    }
+                    LOCK.wait(remaining);
+                }
+            }
+
             Thread.sleep(delayMs);
         } finally {
             synchronized (LOCK) {
