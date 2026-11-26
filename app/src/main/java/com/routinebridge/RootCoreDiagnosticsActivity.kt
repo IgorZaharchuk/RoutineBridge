@@ -661,6 +661,139 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+        addTestButton(tests, "OBJECT CONCURRENCY") {
+            runTest("OBJECT CONCURRENCY") {
+                val policy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+                val root = RootCore.open(applicationContext, policy, 15_000L)
+
+                val objectIds = mutableListOf<String>()
+
+                fun invoke(
+                    id: String,
+                    method: String,
+                    types: Array<String> = emptyArray(),
+                    args: Bundle = Bundle()
+                ) = root.invokeObject(id, method, types, args)
+
+                fun reset(id: String) {
+                    invoke(id, "reset")
+                }
+
+                fun maximum(id: String): Int =
+                    invoke(id, "getMaximum").getInt("value_int", -1)
+
+                fun runBatch(
+                    targets: List<String>,
+                    expected: Int,
+                    delayMs: Long
+                ) {
+                    check(targets.isNotEmpty())
+                    check(targets.size == expected)
+
+                    val gate = java.util.concurrent.CountDownLatch(1)
+                    val executor = Executors.newFixedThreadPool(expected)
+
+                    try {
+                        val futures = targets.map { id ->
+                            executor.submit {
+                                check(
+                                    gate.await(
+                                        5,
+                                        java.util.concurrent.TimeUnit.SECONDS
+                                    )
+                                ) { "Client start gate timed out" }
+
+                                invoke(
+                                    id,
+                                    "runConcurrent",
+                                    arrayOf("int", "long"),
+                                    Bundle().apply {
+                                        putInt("arg0", expected)
+                                        putLong("arg1", delayMs)
+                                    }
+                                )
+                            }
+                        }
+
+                        gate.countDown()
+
+                        futures.forEach { future ->
+                            future.get(
+                                9,
+                                java.util.concurrent.TimeUnit.SECONDS
+                            )
+                        }
+                    } finally {
+                        gate.countDown()
+                        executor.shutdownNow()
+                        executor.awaitTermination(
+                            2,
+                            java.util.concurrent.TimeUnit.SECONDS
+                        )
+                    }
+                }
+
+                try {
+                    repeat(2) {
+                        objectIds += root.createObject(
+                            "com.routinebridge.RootCoreConcurrencyProbe",
+                            emptyArray(),
+                            Bundle()
+                        )
+                    }
+
+                    // 1. Два разных объекта.
+                    reset(objectIds[0])
+                    runBatch(objectIds.take(2), 2, 1_200L)
+                    val separateObjectsMaximum = maximum(objectIds[0])
+
+                    check(separateObjectsMaximum == 2) {
+                        "Different objects: expected maximum=2, " +
+                            "actual=$separateObjectsMaximum"
+                    }
+
+                    // 2. Два одновременных вызова одного объекта.
+                    reset(objectIds[0])
+                    runBatch(listOf(objectIds[0], objectIds[0]), 2, 1_200L)
+                    val sameObjectTwoMaximum = maximum(objectIds[0])
+
+                    check(sameObjectTwoMaximum == 2) {
+                        "One object / two calls: expected maximum=2, " +
+                            "actual=$sameObjectTwoMaximum"
+                    }
+
+                    // 3. Четыре одновременных вызова одного объекта.
+                    reset(objectIds[0])
+                    runBatch(
+                        List(4) { objectIds[0] },
+                        4,
+                        1_500L
+                    )
+                    val sameObjectFourMaximum = maximum(objectIds[0])
+
+                    check(sameObjectFourMaximum == 4) {
+                        "One object / four calls: expected maximum=4, " +
+                            "actual=$sameObjectFourMaximum"
+                    }
+
+                    "Different objects: maximum=$separateObjectsMaximum / 2\n" +
+                        "One object, two calls: maximum=$sameObjectTwoMaximum / 2\n" +
+                        "One object, four calls: maximum=$sameObjectFourMaximum / 4\n" +
+                        "All concurrency barriers completed"
+                } finally {
+                    objectIds.forEach { id ->
+                        runCatching { root.releaseObject(id) }
+                    }
+                    root.close()
+                    check(root.awaitTermination(5_000L)) {
+                        "Root process did not terminate"
+                    }
+                }
+            }
+        }
+
         addTestButton(tests, "CLOSE DURING BLOCKED BINDER CALL") {
             runTest("CLOSE DURING BLOCKED BINDER CALL") {
                 val policy = RootCorePolicy.builder()
