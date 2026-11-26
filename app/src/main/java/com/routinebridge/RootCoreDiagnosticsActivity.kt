@@ -284,6 +284,215 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+
+        addTestButton(tests, "OBJECT LIFECYCLE / SESSION ISOLATION") {
+            runTest("OBJECT LIFECYCLE / SESSION ISOLATION") {
+                val policy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+
+                val first = RootCore.open(applicationContext, policy, 15_000L)
+                var second: RootCoreSession? = null
+                var firstObjectId: String? = null
+                var secondObjectId: String? = null
+
+                try {
+                    val other = RootCore.open(applicationContext, policy, 15_000L)
+                    second = other
+
+                    val objectA = first.createObject(
+                        "com.routinebridge.RootCoreObjectProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
+                    firstObjectId = objectA
+
+                    val objectB = first.createObject(
+                        "com.routinebridge.RootCoreObjectProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
+                    secondObjectId = objectB
+
+                    val crossSessionRejected = try {
+                        other.invokeObject(
+                            objectA,
+                            "getInvocationCount",
+                            emptyArray(),
+                            Bundle()
+                        )
+                        false
+                    } catch (_: android.os.RemoteException) {
+                        true
+                    }
+
+                    check(crossSessionRejected) {
+                        "An object from session A was callable through session B"
+                    }
+
+                    val invocation = first.invokeObject(
+                        objectA,
+                        "inspectFile",
+                        arrayOf("java.lang.String"),
+                        Bundle().apply {
+                            putString("arg0", "/data/system/packages.xml")
+                        }
+                    )
+                    val result = invocation.getBundle("value_bundle")
+                        ?: error("Object A returned no Bundle")
+
+                    check(result.getInt("invocation_count", -1) == 1) {
+                        "Object A did not retain its own state"
+                    }
+
+                    val stateB = first.invokeObject(
+                        objectB,
+                        "getInvocationCount",
+                        emptyArray(),
+                        Bundle()
+                    )
+                    check(stateB.getInt("value_int", -1) == 0) {
+                        "Object B unexpectedly shared Object A state"
+                    }
+
+                    first.releaseObject(objectA)
+                    firstObjectId = null
+
+                    val doubleReleaseRejected = try {
+                        first.releaseObject(objectA)
+                        false
+                    } catch (_: android.os.RemoteException) {
+                        true
+                    }
+                    check(doubleReleaseRejected) {
+                        "Double release was not rejected"
+                    }
+
+                    val releasedInvocationRejected = try {
+                        first.invokeObject(
+                            objectA,
+                            "getInvocationCount",
+                            emptyArray(),
+                            Bundle()
+                        )
+                        false
+                    } catch (_: android.os.RemoteException) {
+                        true
+                    }
+                    check(releasedInvocationRejected) {
+                        "Released object remained callable"
+                    }
+
+                    val survivingState = first.invokeObject(
+                        objectB,
+                        "getInvocationCount",
+                        emptyArray(),
+                        Bundle()
+                    )
+                    check(survivingState.getInt("value_int", -1) == 0) {
+                        "Releasing Object A affected Object B"
+                    }
+
+                    check(other.ping() == 0) {
+                        "Independent session stopped responding"
+                    }
+
+                    "Two objects kept independent state\n" +
+                        "Cross-session object access rejected\n" +
+                        "Release, double release and use-after-release verified\n" +
+                        "Releasing one object did not affect the other"
+                } finally {
+                    firstObjectId?.let {
+                        runCatching { first.releaseObject(it) }
+                    }
+                    secondObjectId?.let {
+                        runCatching { first.releaseObject(it) }
+                    }
+
+                    first.close()
+                    second?.close()
+
+                    check(first.awaitTermination(5_000L)) {
+                        "First root process did not terminate"
+                    }
+                    second?.let {
+                        check(it.awaitTermination(5_000L)) {
+                            "Second root process did not terminate"
+                        }
+                    }
+                }
+            }
+        }
+
+        addTestButton(tests, "SESSION SHUTDOWN / BOTH ORDERS") {
+            runTest("SESSION SHUTDOWN / BOTH ORDERS") {
+                for (closeAFirst in listOf(true, false)) {
+                    val first = RootCoreAccess.open(applicationContext, 15_000L)
+                    var second: RootCoreSession? = null
+
+                    try {
+                        val other = RootCoreAccess.open(
+                            applicationContext,
+                            15_000L
+                        )
+                        second = other
+
+                        check(first.ping() == 0) {
+                            "Session A did not respond before shutdown"
+                        }
+                        check(other.ping() == 0) {
+                            "Session B did not respond before shutdown"
+                        }
+
+                        val closing = if (closeAFirst) first else other
+                        val survivor = if (closeAFirst) other else first
+                        val closingName = if (closeAFirst) "A" else "B"
+
+                        closing.close()
+                        closing.close()
+
+                        val callsRejected = try {
+                            closing.ping()
+                            false
+                        } catch (_: IllegalStateException) {
+                            true
+                        }
+                        check(callsRejected) {
+                            "Session $closingName accepted a call after close()"
+                        }
+
+                        check(closing.awaitTermination(10_000L)) {
+                            "Session $closingName root process did not terminate"
+                        }
+
+                        check(survivor.isRootProcessAlive()) {
+                            "Closing session $closingName terminated the other session"
+                        }
+                        check(survivor.ping() == 0) {
+                            "The surviving session stopped responding"
+                        }
+
+                        survivor.close()
+                        check(survivor.awaitTermination(10_000L)) {
+                            "The surviving root process did not terminate"
+                        }
+                    } finally {
+                        first.close()
+                        second?.close()
+                        runCatching { first.awaitTermination(3_000L) }
+                        second?.let {
+                            runCatching { it.awaitTermination(3_000L) }
+                        }
+                    }
+                }
+
+                "A closed while B remained alive and responsive\n" +
+                    "B closed while A remained alive and responsive\n" +
+                    "Repeated close() was safe; calls after close() rejected\n" +
+                    "All four root processes terminated"
+            }
+        }
+
         addTestButton(tests, getString(R.string.diagnostics_provider_allow)) {
             runTest("PROVIDER ALLOW") {
                 val result = requireSession().queryProvider(providerUri, null)
