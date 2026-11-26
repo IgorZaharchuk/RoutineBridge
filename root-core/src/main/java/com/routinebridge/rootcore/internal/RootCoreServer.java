@@ -120,6 +120,53 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
     }
 
     @Override
+    public Bundle runClassLoadingProbe() throws RemoteException {
+        enforceConnectedClient();
+
+        if (Process.myUid() != 0) {
+            throw new SecurityException(
+                    "Class loading probe requires root UID; actual UID="
+                            + Process.myUid()
+            );
+        }
+
+        try {
+            ClassLoader appClassLoader = context.getClassLoader();
+
+            Class<?> probeClass = appClassLoader.loadClass(
+                    "com.routinebridge.RootCoreClassLoadingProbe"
+            );
+
+            Object probe = probeClass.getDeclaredConstructor().newInstance();
+
+            Object value = probeClass
+                    .getDeclaredMethod("inspect", Context.class)
+                    .invoke(probe, context);
+
+            if (!(value instanceof Bundle)) {
+                throw new IllegalStateException(
+                        "Probe returned an unexpected result"
+                );
+            }
+
+            Bundle result = (Bundle) value;
+            result.putBoolean(
+                    "same_loader_as_server",
+                    probeClass.getClassLoader() == getClass().getClassLoader()
+            );
+
+            return result;
+
+        } catch (Throwable error) {
+            RemoteException remoteError = new RemoteException(
+                    "Root Core class loading probe failed: " + error
+            );
+            remoteError.initCause(error);
+            throw remoteError;
+        }
+    }
+
+    @Override
     public void close() {
         enforceClient();
         handler.post(this::shutdown);

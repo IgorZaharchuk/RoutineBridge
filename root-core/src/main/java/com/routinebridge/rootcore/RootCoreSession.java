@@ -290,6 +290,21 @@ public final class RootCoreSession implements AutoCloseable {
         return callRemote("ping", () -> remote.ping());
     }
 
+    public Bundle runClassLoadingProbe() throws RemoteException {
+        Bundle result = callRemote(
+                "runClassLoadingProbe",
+                () -> remote.runClassLoadingProbe()
+        );
+
+        if (result == null) {
+            throw new RemoteException(
+                    "Root Core server returned a null class loading probe result"
+            );
+        }
+
+        return result;
+    }
+
     public Bundle queryProvider(Uri uri, String[] projection) throws RemoteException {
         if (uri == null) throw new IllegalArgumentException("URI is null");
 

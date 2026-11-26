@@ -83,6 +83,55 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+        addTestButton(tests, "CLASS LOADING / ROOT PROCESS") {
+            runTest("CLIENT CLASS LOADING IN ROOT PROCESS") {
+                val probeSession = RootCore.open(
+                    applicationContext,
+                    RootCorePolicy.denyAll(),
+                    15_000L
+                )
+
+                try {
+                    val result = probeSession.runClassLoadingProbe()
+
+                    val uid = result.getInt("uid", -1)
+                    val pid = result.getInt("pid", -1)
+                    val className = result.getString("class_name")
+                    val classLoader = result.getString("class_loader")
+                    val packageName = result.getString("context_package")
+                    val sameContextLoader =
+                        result.getBoolean("same_loader_as_context")
+                    val sameServerLoader =
+                        result.getBoolean("same_loader_as_server")
+
+                    check(uid == 0) {
+                        "Expected root UID 0, received $uid"
+                    }
+                    check(pid > 0) {
+                        "Invalid root process PID: $pid"
+                    }
+                    check(sameContextLoader) {
+                        "Probe class was not loaded by application Context ClassLoader"
+                    }
+                    check(sameServerLoader) {
+                        "Probe and RootCoreServer use different ClassLoaders"
+                    }
+
+                    "UID=$uid; PID=$pid\n" +
+                        "Class=$className\n" +
+                        "Package=$packageName\n" +
+                        "ClassLoader=$classLoader\n" +
+                        "Context ClassLoader: MATCH\n" +
+                        "Server ClassLoader: MATCH"
+                } finally {
+                    probeSession.close()
+                    check(probeSession.awaitTermination(5_000L)) {
+                        "Probe root process did not terminate"
+                    }
+                }
+            }
+        }
+
         addTestButton(tests, getString(R.string.diagnostics_provider_allow)) {
             runTest("PROVIDER ALLOW") {
                 val result = requireSession().queryProvider(providerUri, null)
