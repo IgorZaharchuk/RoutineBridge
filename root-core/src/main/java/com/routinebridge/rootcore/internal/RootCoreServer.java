@@ -29,7 +29,7 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
 
     private static final String TAG = "RoutineBridgeRootCore";
     private static final long IDLE_TIMEOUT_MS = 15_000L;
-    private static final long RELEASE_CLOSE_TIMEOUT_MS = 10_000L;
+    private static final long RELEASE_CLOSE_TIMEOUT_MS = 8_000L;
     private static final long SHUTDOWN_GRACE_PERIOD_MS = 2_000L;
 
     private final Context context;
@@ -471,18 +471,6 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
         }
 
         private synchronized void beginInvocation() {
-            while (activeInvocations > 0 && !closing) {
-                try {
-                    wait();
-                } catch (InterruptedException error) {
-                    Thread.currentThread().interrupt();
-                    throw new IllegalStateException(
-                            "Interrupted while waiting for another object invocation",
-                            error
-                    );
-                }
-            }
-
             if (closing) {
                 throw new IllegalStateException("Object is closing or has been released");
             }

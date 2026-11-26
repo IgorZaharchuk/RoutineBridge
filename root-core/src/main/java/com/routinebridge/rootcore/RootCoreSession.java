@@ -25,10 +25,12 @@ import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -48,7 +50,6 @@ public final class RootCoreSession implements AutoCloseable {
     private final IBinder.DeathRecipient deathRecipient;
 
     private volatile boolean closed;
-    private volatile boolean unusable;
     private final Object stateLock = new Object();
     private final ExecutorService binderExecutor;
 
@@ -70,11 +71,17 @@ public final class RootCoreSession implements AutoCloseable {
         this.remote = remote;
         this.localToken = localToken;
         this.deathRecipient = deathRecipient;
-        this.binderExecutor = Executors.newSingleThreadExecutor(task -> {
-            Thread thread = new Thread(task, "RootCoreSession-" + sessionId);
-            thread.setDaemon(true);
-            return thread;
-        });
+        this.binderExecutor = new ThreadPoolExecutor(BINDER_EXECUTOR_THREADS, BINDER_EXECUTOR_THREADS, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(BINDER_EXECUTOR_QUEUE_CAPACITY),
+                task -> {
+                    Thread thread = new Thread(
+                            task,
+                            "RootCoreSession-" + sessionId
+                    );
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
     }
 
     static RootCoreSession open(
@@ -285,6 +292,8 @@ public final class RootCoreSession implements AutoCloseable {
         }
     }
 
+    private static final int BINDER_EXECUTOR_THREADS = 4;
+    private static final int BINDER_EXECUTOR_QUEUE_CAPACITY = 64;
     private static final long BINDER_CALL_TIMEOUT_MS = 10_000L;
 
     public int ping() throws RemoteException {
@@ -480,9 +489,8 @@ public final class RootCoreSession implements AutoCloseable {
                 }
                 });
             } catch (RejectedExecutionException error) {
-                unusable = true;
                 throw remoteException(
-                        "Root Core executor is unavailable: " + operation,
+                        "Root Core executor is full or unavailable: " + operation,
                         error
                 );
             }
@@ -491,9 +499,6 @@ public final class RootCoreSession implements AutoCloseable {
         try {
             return future.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException error) {
-            synchronized (stateLock) {
-                unusable = true;
-            }
             future.cancel(true);
             throw new RemoteException(
                     "Root Core Binder call timed out after "
@@ -503,6 +508,11 @@ public final class RootCoreSession implements AutoCloseable {
             Thread.currentThread().interrupt();
             throw remoteException(
                     "Interrupted while waiting for Root Core Binder: " + operation,
+                    error
+            );
+        } catch (CancellationException error) {
+            throw remoteException(
+                    "Root Core Binder call was cancelled: " + operation,
                     error
             );
         } catch (ExecutionException error) {
@@ -537,11 +547,6 @@ public final class RootCoreSession implements AutoCloseable {
         if (closed) {
             throw new IllegalStateException("Root Core session is closed");
         }
-        if (unusable) {
-            throw new IllegalStateException(
-                    "Root Core session is unusable after a Binder timeout"
-            );
-        }
     }
 
     @Override
@@ -557,7 +562,11 @@ public final class RootCoreSession implements AutoCloseable {
             remote.close();
         } catch (Throwable ignored) {
         }
-        binderExecutor.shutdownNow();
+        for (Runnable pending : binderExecutor.shutdownNow()) {
+            if (pending instanceof Future<?>) {
+                ((Future<?>) pending).cancel(false);
+            }
+        }
 
         try {
             if (deathRecipient != null) {
