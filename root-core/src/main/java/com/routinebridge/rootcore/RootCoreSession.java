@@ -409,7 +409,45 @@ public final class RootCoreSession implements AutoCloseable {
 
         Future<T> future;
         try {
-            future = binderExecutor.submit(call);
+            future = binderExecutor.submit(() -> {
+                String tag = "RoutineBridgeRootCore";
+                String prefix = "CLIENT_BINDER_CALL ";
+                android.util.Log.i(
+                        tag,
+                        prefix + "BEGIN operation=" + operation
+                                + " session=" + sessionId.substring(0, 8)
+                                + " thread=" + Thread.currentThread().getName()
+                );
+                try {
+                    T result = call.call();
+                    android.util.Log.i(
+                            tag,
+                            prefix + "RETURN operation=" + operation
+                                    + " session=" + sessionId.substring(0, 8)
+                                    + " resultNull=" + (result == null)
+                    );
+                    return result;
+                } catch (Exception error) {
+                    android.util.Log.e(
+                            tag,
+                            prefix + "THROW operation=" + operation
+                                    + " session=" + sessionId.substring(0, 8)
+                                    + " type=" + error.getClass().getName()
+                                    + " message=" + error.getMessage(),
+                            error
+                    );
+                    throw error;
+                } catch (Error error) {
+                    android.util.Log.e(
+                            tag,
+                            prefix + "ERROR operation=" + operation
+                                    + " session=" + sessionId.substring(0, 8)
+                                    + " type=" + error.getClass().getName(),
+                            error
+                    );
+                    throw error;
+                }
+            });
         } catch (RejectedExecutionException error) {
             unusable = true;
             throw remoteException(
@@ -435,6 +473,16 @@ public final class RootCoreSession implements AutoCloseable {
             );
         } catch (ExecutionException error) {
             Throwable cause = error.getCause();
+            android.util.Log.e(
+                    "RoutineBridgeRootCore",
+                    "CLIENT_BINDER_EXECUTION_EXCEPTION operation=" + operation
+                            + " session=" + sessionId.substring(0, 8)
+                            + " causeType=" + (cause == null
+                                    ? "null" : cause.getClass().getName())
+                            + " causeMessage=" + (cause == null
+                                    ? "null" : cause.getMessage()),
+                    cause == null ? error : cause
+            );
             if (cause instanceof RemoteException) {
                 throw (RemoteException) cause;
             }
