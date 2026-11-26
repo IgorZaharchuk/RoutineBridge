@@ -15,8 +15,11 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 import com.routinebridge.rootcore.RootCorePolicy;
 import com.routinebridge.rootcore.ipc.IRootCoreManager;
@@ -26,14 +29,15 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
 
     private static final String TAG = "RoutineBridgeRootCore";
     private static final long IDLE_TIMEOUT_MS = 15_000L;
+    private static final long RELEASE_CLOSE_TIMEOUT_MS = 10_000L;
+    private static final long SHUTDOWN_GRACE_PERIOD_MS = 2_000L;
 
     private final Context context;
     private final int clientUid;
     private final String sessionId;
     private final RootCorePolicy policy;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final ConcurrentMap<String, Object> objects =
-            new ConcurrentHashMap<>();
+    private final ObjectRegistry objects = new ObjectRegistry();
 
     private IBinder clientToken;
     private IBinder.DeathRecipient deathRecipient;
@@ -222,22 +226,36 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
             Bundle arguments
     ) throws RemoteException {
         enforceClientCodePermission();
+
+        Object instance = null;
         try {
             if (className == null || !className.matches("[A-Za-z_$][A-Za-z0-9_$.]*")) {
                 throw new IllegalArgumentException("Invalid client class name");
             }
+
             Class<?> type = context.getClassLoader().loadClass(className);
             Class<?>[] parameterTypes = new Class<?>[
                     constructorTypes == null ? 0 : constructorTypes.length
             ];
+
             for (int i = 0; i < parameterTypes.length; i++) {
                 parameterTypes[i] = resolveType(constructorTypes[i]);
             }
+
             Constructor<?> constructor = type.getConstructor(parameterTypes);
             Object[] values = decodeArguments(constructorTypes, arguments);
-            Object instance = constructor.newInstance(values);
+            instance = constructor.newInstance(values);
+
             String id = UUID.randomUUID().toString();
-            objects.put(id, instance);
+            ObjectEntry entry = new ObjectEntry(instance);
+
+            if (!objects.register(id, entry)) {
+                entry.requestClose();
+                throw new IllegalStateException(
+                        "Root Core session is closing; object was not registered"
+                );
+            }
+
             return id;
         } catch (Throwable error) {
             throw asRemoteException("Create client object failed", error);
@@ -252,41 +270,45 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
             Bundle arguments
     ) throws RemoteException {
         enforceClientCodePermission();
+
         android.util.Log.i(TAG,
                 "OBJECT_INVOKE_BEGIN session=" + sessionId.substring(0, 8)
                         + " pid=" + Process.myPid()
                         + " id=" + shortObjectId(objectId)
                         + " exists=" + objects.containsKey(objectId));
+
         try {
-            Object instance = objects.get(objectId);
-            if (instance == null) {
-                android.util.Log.w(TAG,
-                        "OBJECT_INVOKE_MISSING session=" + sessionId.substring(0, 8)
-                                + " id=" + shortObjectId(objectId));
+            ObjectEntry entry = objects.get(objectId);
+            if (entry == null) {
                 throw new IllegalArgumentException("Unknown or released object ID");
             }
+
             if (methodName == null || !methodName.matches("[A-Za-z_$][A-Za-z0-9_$]*")) {
                 throw new IllegalArgumentException("Invalid method name");
             }
+
             Class<?>[] types = new Class<?>[
                     parameterTypes == null ? 0 : parameterTypes.length
             ];
+
             for (int i = 0; i < types.length; i++) {
                 types[i] = resolveType(parameterTypes[i]);
             }
-            Method method = instance.getClass().getMethod(methodName, types);
+
+            Method method = entry.instance().getClass().getMethod(methodName, types);
             if (method.getDeclaringClass() == Object.class) {
                 throw new SecurityException("Object base methods are not callable");
             }
+
             Object[] values = decodeArguments(parameterTypes, arguments);
-            Object value = method.invoke(instance, values);
+            Object value = entry.invoke(method, values);
+
             Bundle result = encodeResult(value, method.getReturnType());
             result.putString("status", "success");
 
             android.util.Log.i(TAG,
                     "OBJECT_INVOKE_SUCCESS session=" + sessionId.substring(0, 8)
-                            + " id=" + shortObjectId(objectId)
-                            + " resultNull=" + (result == null));
+                            + " id=" + shortObjectId(objectId));
             return result;
         } catch (Throwable error) {
             android.util.Log.e(TAG,
@@ -302,29 +324,28 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
         enforceClientCodePermission();
 
         try {
-            boolean existedBefore =
-                    objectId != null && objects.containsKey(objectId);
-            android.util.Log.i(TAG,
-                    "OBJECT_RELEASE_BEGIN session=" + sessionId.substring(0, 8)
-                            + " pid=" + Process.myPid()
-                            + " id=" + shortObjectId(objectId)
-                            + " exists=" + existedBefore
-                            + " size=" + objects.size());
-
-            Object removed = objectId == null ? null : objects.remove(objectId);
+            ObjectEntry removed = objects.remove(objectId);
 
             android.util.Log.i(TAG,
-                    "OBJECT_RELEASE_RESULT session=" + sessionId.substring(0, 8)
+                    "OBJECT_RELEASE session=" + sessionId.substring(0, 8)
                             + " id=" + shortObjectId(objectId)
                             + " removed=" + (removed != null)
                             + " size=" + objects.size());
 
             if (removed == null) {
-                android.util.Log.w(TAG,
-                        "OBJECT_RELEASE_REJECTED session=" + sessionId.substring(0, 8)
-                                + " id=" + shortObjectId(objectId));
                 throw new IllegalArgumentException(
                         "Unknown or already released object ID"
+                );
+            }
+
+            Throwable closeError = removed.closeAndWait(
+                    RELEASE_CLOSE_TIMEOUT_MS
+            );
+
+            if (closeError != null) {
+                throw new IllegalStateException(
+                        "Object was released, but close failed",
+                        closeError
                 );
             }
 
@@ -378,6 +399,196 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
         return result;
     }
 
+    private static final class ObjectRegistry {
+        private final Map<String, ObjectEntry> entries = new HashMap<>();
+        private boolean closed;
+
+        synchronized boolean register(String id, ObjectEntry entry) {
+            if (closed) return false;
+            entries.put(id, entry);
+            return true;
+        }
+
+        synchronized ObjectEntry get(String id) {
+            return closed || id == null ? null : entries.get(id);
+        }
+
+        synchronized ObjectEntry remove(String id) {
+            if (closed || id == null) return null;
+
+            ObjectEntry entry = entries.remove(id);
+            if (entry != null) {
+                entry.markClosing();
+            }
+            return entry;
+        }
+
+        synchronized boolean containsKey(String id) {
+            return !closed && id != null && entries.containsKey(id);
+        }
+
+        synchronized int size() {
+            return entries.size();
+        }
+
+        synchronized List<ObjectEntry> detachAll() {
+            closed = true;
+            List<ObjectEntry> result = new ArrayList<>(entries.values());
+
+            for (ObjectEntry entry : result) {
+                entry.markClosing();
+            }
+
+            entries.clear();
+            return result;
+        }
+    }
+
+    private static final class ObjectEntry {
+        private final Object instance;
+
+        private boolean closing;
+        private boolean closeStarted;
+        private boolean closeFinished;
+        private int activeInvocations;
+        private Throwable closeError;
+
+        ObjectEntry(Object instance) {
+            this.instance = instance;
+        }
+
+        Object instance() {
+            return instance;
+        }
+
+        Object invoke(Method method, Object[] arguments) throws Throwable {
+            beginInvocation();
+            try {
+                return method.invoke(instance, arguments);
+            } finally {
+                endInvocation();
+            }
+        }
+
+        private synchronized void beginInvocation() {
+            while (activeInvocations > 0 && !closing) {
+                try {
+                    wait();
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(
+                            "Interrupted while waiting for another object invocation",
+                            error
+                    );
+                }
+            }
+
+            if (closing) {
+                throw new IllegalStateException("Object is closing or has been released");
+            }
+
+            activeInvocations++;
+        }
+
+        private synchronized void endInvocation() {
+            if (activeInvocations > 0) {
+                activeInvocations--;
+            }
+            notifyAll();
+        }
+
+        synchronized void markClosing() {
+            closing = true;
+            notifyAll();
+        }
+
+        void requestClose() {
+            Thread worker = null;
+
+            synchronized (this) {
+                closing = true;
+                notifyAll();
+
+                if (closeStarted || closeFinished) return;
+                closeStarted = true;
+
+                if (!(instance instanceof AutoCloseable)) {
+                    closeFinished = true;
+                    notifyAll();
+                    return;
+                }
+
+                worker = new Thread(this::performClose, "RootCoreObjectClose");
+                worker.setDaemon(true);
+            }
+
+            try {
+                worker.start();
+            } catch (Throwable error) {
+                synchronized (this) {
+                    closeError = error;
+                    closeFinished = true;
+                    notifyAll();
+                }
+            }
+        }
+
+        private void performClose() {
+            boolean interrupted = false;
+
+            try {
+                synchronized (this) {
+                    while (activeInvocations > 0) {
+                        try {
+                            wait();
+                        } catch (InterruptedException ignored) {
+                            interrupted = true;
+                        }
+                    }
+                }
+
+                ((AutoCloseable) instance).close();
+            } catch (Throwable error) {
+                closeError = error;
+            } finally {
+                synchronized (this) {
+                    closeFinished = true;
+                    notifyAll();
+                }
+                if (interrupted) Thread.currentThread().interrupt();
+            }
+        }
+
+        Throwable closeAndWait(long timeoutMs) {
+            requestClose();
+            long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
+
+            synchronized (this) {
+                while (!closeFinished) {
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0L) {
+                        return new TimeoutException(
+                                "Timed out waiting for AutoCloseable.close()"
+                        );
+                    }
+
+                    try {
+                        long waitMs = Math.max(
+                                1L,
+                                Math.min(remaining / 1_000_000L, 1_000L)
+                        );
+                        wait(waitMs);
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                        return error;
+                    }
+                }
+
+                return closeError;
+            }
+        }
+    }
+
     @Override
     public void close() {
         enforceClient();
@@ -411,7 +622,11 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
         closed = true;
 
         handler.removeCallbacks(idleShutdown);
-        objects.clear();
+
+        List<ObjectEntry> remainingObjects = objects.detachAll();
+        for (ObjectEntry entry : remainingObjects) {
+            entry.requestClose();
+        }
 
         if (clientToken != null && deathRecipient != null) {
             try {
@@ -424,7 +639,13 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
         deathRecipient = null;
         connected = false;
 
-        android.util.Log.i(TAG, "Root Core session closing");
-        handler.postDelayed(() -> System.exit(0), 50L);
+        android.util.Log.i(TAG,
+                "Root Core session closing; detached objects="
+                        + remainingObjects.size());
+
+        handler.postDelayed(
+                () -> System.exit(0),
+                SHUTDOWN_GRACE_PERIOD_MS
+        );
     }
 }

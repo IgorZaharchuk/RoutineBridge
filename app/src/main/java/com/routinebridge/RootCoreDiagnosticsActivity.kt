@@ -432,6 +432,235 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+        addTestButton(tests, "AUTO-CLOSEABLE / RELEASE") {
+            runTest("AUTO-CLOSEABLE / RELEASE") {
+                val policy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+                val root = RootCore.open(applicationContext, policy, 15_000L)
+                val successMarker = java.io.File(
+                    cacheDir,
+                    "rootcore-close-success-${java.util.UUID.randomUUID()}.txt"
+                )
+                val failureMarker = java.io.File(
+                    cacheDir,
+                    "rootcore-close-failure-${java.util.UUID.randomUUID()}.txt"
+                )
+                var successId: String? = null
+                var failureId: String? = null
+
+                fun configure(id: String, path: String, fail: Boolean) {
+                    root.invokeObject(
+                        id,
+                        "configureClose",
+                        arrayOf("java.lang.String", "long", "boolean"),
+                        Bundle().apply {
+                            putString("arg0", path)
+                            putLong("arg1", 0L)
+                            putBoolean("arg2", fail)
+                        }
+                    )
+                }
+
+                try {
+                    successId = root.createObject(
+                        "com.routinebridge.RootCoreAutoCloseableProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
+                    configure(successId!!, successMarker.absolutePath, false)
+                    root.releaseObject(successId!!)
+                    val releasedId = successId!!
+                    successId = null
+
+                    val successText = successMarker.readText()
+                    check(successText == "started\nclosed\n") {
+                        "Expected one successful close; marker=$successText"
+                    }
+
+                    val doubleReleaseRejected = try {
+                        root.releaseObject(releasedId)
+                        false
+                    } catch (_: android.os.RemoteException) {
+                        true
+                    }
+                    check(doubleReleaseRejected) {
+                        "Second release was not rejected"
+                    }
+
+                    failureId = root.createObject(
+                        "com.routinebridge.RootCoreAutoCloseableProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
+                    configure(failureId!!, failureMarker.absolutePath, true)
+
+                    val closeFailure = try {
+                        root.releaseObject(failureId!!)
+                        null
+                    } catch (error: android.os.RemoteException) {
+                        error
+                    }
+                    check(closeFailure != null) {
+                        "Expected close() failure to be reported"
+                    }
+
+                    val failedCloseText = failureMarker.readText()
+                    check(failedCloseText == "started\n") {
+                        "Unexpected failure marker: $failedCloseText"
+                    }
+
+                    val useAfterFailedCloseRejected = try {
+                        root.invokeObject(
+                            failureId!!,
+                            "configureClose",
+                            arrayOf("java.lang.String", "long", "boolean"),
+                            Bundle().apply {
+                                putString("arg0", failureMarker.absolutePath)
+                                putLong("arg1", 0L)
+                                putBoolean("arg2", false)
+                            }
+                        )
+                        false
+                    } catch (_: android.os.RemoteException) {
+                        true
+                    }
+                    check(useAfterFailedCloseRejected) {
+                        "Object remained callable after close() failed"
+                    }
+
+                    "Successful release called close() exactly once\n" +
+                        "Double release rejected\n" +
+                        "close() exception reported to caller\n" +
+                        "Object remained released after close() failure"
+                } finally {
+                    successId?.let { runCatching { root.releaseObject(it) } }
+                    failureId?.let { runCatching { root.releaseObject(it) } }
+                    root.close()
+                    runCatching { root.awaitTermination(5_000L) }
+                    successMarker.delete()
+                    failureMarker.delete()
+                }
+            }
+        }
+
+        addTestButton(tests, "AUTO-CLOSEABLE / SESSION SHUTDOWN") {
+            runTest("AUTO-CLOSEABLE / SESSION SHUTDOWN") {
+                val policy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+                val root = RootCore.open(applicationContext, policy, 15_000L)
+                val successMarker = java.io.File(
+                    cacheDir,
+                    "rootcore-shutdown-success-${java.util.UUID.randomUUID()}.txt"
+                )
+                val failureMarker = java.io.File(
+                    cacheDir,
+                    "rootcore-shutdown-failure-${java.util.UUID.randomUUID()}.txt"
+                )
+
+                fun createConfigured(path: String, fail: Boolean) {
+                    val id = root.createObject(
+                        "com.routinebridge.RootCoreAutoCloseableProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
+                    root.invokeObject(
+                        id,
+                        "configureClose",
+                        arrayOf("java.lang.String", "long", "boolean"),
+                        Bundle().apply {
+                            putString("arg0", path)
+                            putLong("arg1", 0L)
+                            putBoolean("arg2", fail)
+                        }
+                    )
+                }
+
+                try {
+                    createConfigured(successMarker.absolutePath, false)
+                    createConfigured(failureMarker.absolutePath, true)
+
+                    root.close()
+                    check(root.awaitTermination(5_000L)) {
+                        "Root process did not terminate after session close"
+                    }
+
+                    check(successMarker.isFile) {
+                        "Successful AutoCloseable was not closed"
+                    }
+                    check(failureMarker.isFile) {
+                        "Failing AutoCloseable.close() was not attempted"
+                    }
+                    check(successMarker.readText() == "started\nclosed\n") {
+                        "Successful object close marker is incomplete"
+                    }
+                    check(failureMarker.readText() == "started\n") {
+                        "Failing object close marker is unexpected"
+                    }
+
+                    "Session shutdown attempted close() for both objects\n" +
+                        "One close() failure did not prevent the other close()\n" +
+                        "Root process terminated"
+                } finally {
+                    root.close()
+                    runCatching { root.awaitTermination(5_000L) }
+                    successMarker.delete()
+                    failureMarker.delete()
+                }
+            }
+        }
+
+        addTestButton(tests, "AUTO-CLOSEABLE / BLOCKED CLOSE") {
+            runTest("AUTO-CLOSEABLE / BLOCKED CLOSE") {
+                val policy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+                val root = RootCore.open(applicationContext, policy, 15_000L)
+                val marker = java.io.File(
+                    cacheDir,
+                    "rootcore-blocked-close-${java.util.UUID.randomUUID()}.txt"
+                )
+
+                try {
+                    val id = root.createObject(
+                        "com.routinebridge.RootCoreAutoCloseableProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
+                    root.invokeObject(
+                        id,
+                        "configureClose",
+                        arrayOf("java.lang.String", "long", "boolean"),
+                        Bundle().apply {
+                            putString("arg0", marker.absolutePath)
+                            putLong("arg1", 30_000L)
+                            putBoolean("arg2", false)
+                        }
+                    )
+
+                    root.close()
+                    check(root.awaitTermination(5_000L)) {
+                        "Blocked close() prevented root process termination"
+                    }
+
+                    check(marker.isFile) {
+                        "AutoCloseable.close() did not start"
+                    }
+                    check(marker.readText() == "started\n") {
+                        "Blocked close() unexpectedly completed before process exit"
+                    }
+
+                    "AutoCloseable.close() started and remained blocked\n" +
+                        "Root process terminated within the shutdown deadline"
+                } finally {
+                    root.close()
+                    runCatching { root.awaitTermination(5_000L) }
+                    marker.delete()
+                }
+            }
+        }
+
         addTestButton(tests, "CLOSE DURING BLOCKED BINDER CALL") {
             runTest("CLOSE DURING BLOCKED BINDER CALL") {
                 val policy = RootCorePolicy.builder()
