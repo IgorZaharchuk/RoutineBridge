@@ -331,9 +331,7 @@ public final class RootCoreSession implements AutoCloseable {
                         arguments == null ? new Bundle() : arguments
                 )
         );
-        if (result == null) {
-            throw new RemoteException("Root Core returned a null invocation result");
-        }
+        requireSuccessfulObjectOperation(result, "invokeObject");
         return result;
     }
 
@@ -341,10 +339,42 @@ public final class RootCoreSession implements AutoCloseable {
         if (objectId == null || objectId.isBlank()) {
             throw new IllegalArgumentException("Object ID is empty");
         }
-        callRemote("releaseObject", () -> {
-            remote.releaseObject(objectId);
-            return null;
-        });
+
+        Bundle result = callRemote(
+                "releaseObject",
+                () -> remote.releaseObject(objectId)
+        );
+        requireSuccessfulObjectOperation(result, "releaseObject");
+    }
+
+    private static void requireSuccessfulObjectOperation(
+            Bundle result,
+            String operation
+    ) throws RemoteException {
+        if (result == null) {
+            throw new RemoteException(
+                    "Root Core returned a null result for " + operation
+            );
+        }
+
+        String status = result.getString("status");
+        if ("error".equals(status)) {
+            String type = result.getString("error_type", "UnknownError");
+            String message = result.getString(
+                    "error_message",
+                    "Root Core operation failed without a message"
+            );
+            throw new RemoteException(
+                    "Root Core " + operation + " failed ["
+                            + type + "]: " + message
+            );
+        }
+
+        if (!"success".equals(status)) {
+            throw new RemoteException(
+                    "Root Core returned an invalid status for " + operation
+            );
+        }
     }
 
     public Bundle queryProvider(Uri uri, String[] projection) throws RemoteException {

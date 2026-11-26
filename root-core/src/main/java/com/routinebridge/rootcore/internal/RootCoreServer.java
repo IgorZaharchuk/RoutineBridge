@@ -281,42 +281,82 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
             Object[] values = decodeArguments(parameterTypes, arguments);
             Object value = method.invoke(instance, values);
             Bundle result = encodeResult(value, method.getReturnType());
+            result.putString("status", "success");
+
             android.util.Log.i(TAG,
                     "OBJECT_INVOKE_SUCCESS session=" + sessionId.substring(0, 8)
                             + " id=" + shortObjectId(objectId)
                             + " resultNull=" + (result == null));
             return result;
         } catch (Throwable error) {
-            throw asRemoteException("Invoke client object failed", error);
+            android.util.Log.e(TAG,
+                    "OBJECT_INVOKE_ERROR session=" + sessionId.substring(0, 8)
+                            + " id=" + shortObjectId(objectId),
+                    error);
+            return operationErrorResult("Invoke client object failed", error);
         }
     }
 
     @Override
-    public void releaseObject(String objectId) throws RemoteException {
+    public Bundle releaseObject(String objectId) throws RemoteException {
         enforceClientCodePermission();
 
-        boolean existedBefore = objectId != null && objects.containsKey(objectId);
-        android.util.Log.i(TAG,
-                "OBJECT_RELEASE_BEGIN session=" + sessionId.substring(0, 8)
-                        + " pid=" + Process.myPid()
-                        + " id=" + shortObjectId(objectId)
-                        + " exists=" + existedBefore
-                        + " size=" + objects.size());
+        try {
+            boolean existedBefore =
+                    objectId != null && objects.containsKey(objectId);
+            android.util.Log.i(TAG,
+                    "OBJECT_RELEASE_BEGIN session=" + sessionId.substring(0, 8)
+                            + " pid=" + Process.myPid()
+                            + " id=" + shortObjectId(objectId)
+                            + " exists=" + existedBefore
+                            + " size=" + objects.size());
 
-        Object removed = objectId == null ? null : objects.remove(objectId);
+            Object removed = objectId == null ? null : objects.remove(objectId);
 
-        android.util.Log.i(TAG,
-                "OBJECT_RELEASE_RESULT session=" + sessionId.substring(0, 8)
-                        + " id=" + shortObjectId(objectId)
-                        + " removed=" + (removed != null)
-                        + " size=" + objects.size());
+            android.util.Log.i(TAG,
+                    "OBJECT_RELEASE_RESULT session=" + sessionId.substring(0, 8)
+                            + " id=" + shortObjectId(objectId)
+                            + " removed=" + (removed != null)
+                            + " size=" + objects.size());
 
-        if (removed == null) {
-            android.util.Log.w(TAG,
-                    "OBJECT_RELEASE_REJECTED session=" + sessionId.substring(0, 8)
-                            + " id=" + shortObjectId(objectId));
-            throw new RemoteException("Unknown or already released object ID");
+            if (removed == null) {
+                android.util.Log.w(TAG,
+                        "OBJECT_RELEASE_REJECTED session=" + sessionId.substring(0, 8)
+                                + " id=" + shortObjectId(objectId));
+                throw new IllegalArgumentException(
+                        "Unknown or already released object ID"
+                );
+            }
+
+            Bundle result = new Bundle();
+            result.putString("status", "success");
+            result.putBoolean("released", true);
+            return result;
+        } catch (Throwable error) {
+            android.util.Log.e(TAG,
+                    "OBJECT_RELEASE_ERROR session=" + sessionId.substring(0, 8)
+                            + " id=" + shortObjectId(objectId),
+                    error);
+            return operationErrorResult("Release client object failed", error);
         }
+    }
+
+    private static Bundle operationErrorResult(String operation, Throwable error) {
+        Throwable cause = error;
+        if (cause instanceof InvocationTargetException
+                && ((InvocationTargetException) cause).getCause() != null) {
+            cause = ((InvocationTargetException) cause).getCause();
+        }
+
+        Bundle result = new Bundle();
+        result.putString("status", "error");
+        result.putString("error_type", cause.getClass().getName());
+        result.putString(
+                "error_message",
+                operation + ": " + cause.getClass().getSimpleName()
+                        + ": " + String.valueOf(cause.getMessage())
+        );
+        return result;
     }
 
     private static String shortObjectId(String objectId) {
