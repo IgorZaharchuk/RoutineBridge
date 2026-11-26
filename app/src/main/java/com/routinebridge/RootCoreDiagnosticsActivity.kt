@@ -171,6 +171,119 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+        addTestButton(tests, "DENY CLIENT CODE") {
+            runTest("DENY ALL / CLIENT CODE") {
+                val denied = RootCore.open(
+                    applicationContext,
+                    RootCorePolicy.denyAll(),
+                    15_000L
+                )
+                try {
+                    val denial = try {
+                        denied.createObject(
+                            "com.routinebridge.RootCoreObjectProbe",
+                            emptyArray(),
+                            Bundle()
+                        )
+                        null
+                    } catch (error: SecurityException) {
+                        error
+                    }
+
+                    check(denial != null) {
+                        "denyAll() unexpectedly allowed client object creation"
+                    }
+
+                    check(
+                        denial.message?.contains("not allowed by RootCorePolicy") == true
+                    ) {
+                        "Unexpected denial reason: ${denial.message}"
+                    }
+
+                    "denyAll() rejected client object creation: ${denial.message}"
+                } finally {
+                    denied.close()
+                    check(denied.awaitTermination(5_000L)) {
+                        "Denied root process did not terminate"
+                    }
+                }
+            }
+        }
+
+        addTestButton(tests, "POLICY ISOLATION") {
+            runTest("INDEPENDENT SESSION POLICIES") {
+                val allowedPolicy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+
+                val first = RootCore.open(
+                    applicationContext,
+                    allowedPolicy,
+                    15_000L
+                )
+                var second: RootCoreSession? = null
+                var objectId: String? = null
+
+                try {
+                    second = RootCore.open(
+                        applicationContext,
+                        RootCorePolicy.denyAll(),
+                        15_000L
+                    )
+
+                    objectId = first.createObject(
+                        "com.routinebridge.RootCoreObjectProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
+
+                    val denial = try {
+                        second.createObject(
+                            "com.routinebridge.RootCoreObjectProbe",
+                            emptyArray(),
+                            Bundle()
+                        )
+                        null
+                    } catch (error: SecurityException) {
+                        error
+                    }
+
+                    check(denial != null) {
+                        "Second session unexpectedly allowed client code"
+                    }
+
+                    check(first.ping() == 0) {
+                        "First root session stopped responding"
+                    }
+                    check(second.ping() == 0) {
+                        "Second root session stopped responding"
+                    }
+
+                    val state = first.invokeObject(
+                        objectId,
+                        "getInvocationCount",
+                        emptyArray(),
+                        Bundle()
+                    )
+                    check(state.getInt("value_int", -1) == 0) {
+                        "First session object became unavailable"
+                    }
+
+                    "Session A: client code allowed; object created and callable\n" +
+                        "Session B: client code denied by its own policy\n" +
+                        "Both root processes remained alive"
+                } finally {
+                    if (objectId != null) {
+                        runCatching { first.releaseObject(objectId) }
+                    }
+                    first.close()
+                    second?.close()
+                    runCatching { first.awaitTermination(5_000L) }
+                    second?.let { runCatching { it.awaitTermination(5_000L) } }
+                }
+            }
+        }
+
         addTestButton(tests, getString(R.string.diagnostics_provider_allow)) {
             runTest("PROVIDER ALLOW") {
                 val result = requireSession().queryProvider(providerUri, null)
@@ -439,12 +552,23 @@ class RootCoreDiagnosticsActivity : Activity() {
             runTest("CLOSE SESSION") {
                 val current = requireSession()
                 current.close()
+
+                val callsRejected = try {
+                    current.ping()
+                    false
+                } catch (_: IllegalStateException) {
+                    true
+                }
+                check(callsRejected) {
+                    "Session accepted a call after close()"
+                }
+
                 val terminated = current.awaitTermination(10_000L)
                 check(terminated) {
                     "Root process is still alive: ${current.isRootProcessAlive()}"
                 }
                 session = null
-                "Root process terminated; session closed"
+                "Calls after close() rejected; root process terminated"
             }
         }
 
