@@ -536,8 +536,11 @@ public final class RootCoreServer extends IRootCoreManager.Stub {
                 }
 
                 ((AutoCloseable) instance).close();
-            } catch (Throwable error) {
+            } catch (Exception error) {
                 closeError = error;
+            } catch (Error error) {
+                closeError = error;
+                throw error;
             } finally {
                 synchronized (this) {
                     closeFinished = true;

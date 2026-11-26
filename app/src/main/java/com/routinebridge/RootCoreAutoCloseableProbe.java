@@ -12,11 +12,7 @@ public final class RootCoreAutoCloseableProbe implements AutoCloseable {
     public RootCoreAutoCloseableProbe() {
     }
 
-    public void configureClose(
-            String markerPath,
-            long closeDelayMs,
-            boolean failClose
-    ) {
+    public void configureClose(String markerPath, long closeDelayMs, boolean failClose) {
         this.markerPath = markerPath;
         this.closeDelayMs = closeDelayMs;
         this.failClose = failClose;
