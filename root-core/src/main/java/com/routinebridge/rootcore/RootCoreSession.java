@@ -49,6 +49,7 @@ public final class RootCoreSession implements AutoCloseable {
 
     private volatile boolean closed;
     private volatile boolean unusable;
+    private final Object stateLock = new Object();
     private final ExecutorService binderExecutor;
 
     private RootCoreSession(
@@ -430,16 +431,16 @@ public final class RootCoreSession implements AutoCloseable {
         return callRemote(operation, BINDER_CALL_TIMEOUT_MS, call);
     }
 
-    private synchronized <T> T callRemote(
+    private <T> T callRemote(
             String operation,
             long timeoutMs,
             Callable<T> call
     ) throws RemoteException {
-        ensureOpen();
-
         Future<T> future;
-        try {
-            future = binderExecutor.submit(() -> {
+        synchronized (stateLock) {
+            ensureOpen();
+            try {
+                future = binderExecutor.submit(() -> {
                 String tag = "RoutineBridgeRootCore";
                 String prefix = "CLIENT_BINDER_CALL ";
                 android.util.Log.i(
@@ -477,19 +478,22 @@ public final class RootCoreSession implements AutoCloseable {
                     );
                     throw error;
                 }
-            });
-        } catch (RejectedExecutionException error) {
-            unusable = true;
-            throw remoteException(
-                    "Root Core executor is unavailable: " + operation,
-                    error
-            );
+                });
+            } catch (RejectedExecutionException error) {
+                unusable = true;
+                throw remoteException(
+                        "Root Core executor is unavailable: " + operation,
+                        error
+                );
+            }
         }
 
         try {
             return future.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException error) {
-            unusable = true;
+            synchronized (stateLock) {
+                unusable = true;
+            }
             future.cancel(true);
             throw new RemoteException(
                     "Root Core Binder call timed out after "
@@ -541,9 +545,11 @@ public final class RootCoreSession implements AutoCloseable {
     }
 
     @Override
-    public synchronized void close() {
-        if (closed) return;
-        closed = true;
+    public void close() {
+        synchronized (stateLock) {
+            if (closed) return;
+            closed = true;
+        }
 
         // AIDL close() is oneway: send it directly, even after a Binder timeout.
         // Do not queue it behind a possibly blocked synchronous Binder call.

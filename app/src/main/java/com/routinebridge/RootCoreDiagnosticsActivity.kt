@@ -432,6 +432,95 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+        addTestButton(tests, "CLOSE DURING BLOCKED BINDER CALL") {
+            runTest("CLOSE DURING BLOCKED BINDER CALL") {
+                val policy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+                val root = RootCore.open(applicationContext, policy, 15_000L)
+                val marker = java.io.File(
+                    cacheDir,
+                    "rootcore-block-${java.util.UUID.randomUUID()}.started"
+                )
+                marker.delete()
+
+                var objectId: String? = null
+                var invocationThread: Thread? = null
+                val invocationDone = java.util.concurrent.CountDownLatch(1)
+                val invocationFailure =
+                    java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+
+                try {
+                    objectId = root.createObject(
+                        "com.routinebridge.RootCoreObjectProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
+
+                    val id = objectId ?: error("Object creation returned no ID")
+                    invocationThread = Thread({
+                        try {
+                            root.invokeObject(
+                                id,
+                                "blockForDiagnostics",
+                                arrayOf("java.lang.String"),
+                                Bundle().apply {
+                                    putString("arg0", marker.absolutePath)
+                                }
+                            )
+                        } catch (error: Throwable) {
+                            invocationFailure.set(error)
+                        } finally {
+                            invocationDone.countDown()
+                        }
+                    }, "RootCoreBlockedInvocation").apply {
+                        isDaemon = true
+                        start()
+                    }
+
+                    val deadline = SystemClock.elapsedRealtime() + 5_000L
+                    while (!marker.isFile &&
+                        SystemClock.elapsedRealtime() < deadline
+                    ) {
+                        SystemClock.sleep(20L)
+                    }
+                    check(marker.isFile) {
+                        "Remote blocking method did not signal that it started"
+                    }
+
+                    val closeStart = SystemClock.elapsedRealtime()
+                    root.close()
+                    val closeElapsed = SystemClock.elapsedRealtime() - closeStart
+
+                    check(closeElapsed < 1_500L) {
+                        "close() took ${closeElapsed} ms during a blocked Binder call"
+                    }
+                    check(root.awaitTermination(5_000L)) {
+                        "Root process did not terminate while client method was blocked"
+                    }
+                    check(invocationDone.await(
+                        3_000L,
+                        java.util.concurrent.TimeUnit.MILLISECONDS
+                    )) {
+                        "Blocked Binder invocation did not finish after root process termination"
+                    }
+                    check(invocationFailure.get() != null) {
+                        "Blocked invocation unexpectedly returned normally"
+                    }
+
+                    "close() returned in ${closeElapsed} ms\n" +
+                        "Root process terminated while the remote method was sleeping\n" +
+                        "Blocked invocation ended with " +
+                        invocationFailure.get()!!::class.java.simpleName
+                } finally {
+                    root.close()
+                    runCatching { root.awaitTermination(5_000L) }
+                    invocationThread?.interrupt()
+                    marker.delete()
+                }
+            }
+        }
+
         addTestButton(tests, "SESSION SHUTDOWN / BOTH ORDERS") {
             runTest("SESSION SHUTDOWN / BOTH ORDERS") {
                 for (closeAFirst in listOf(true, false)) {

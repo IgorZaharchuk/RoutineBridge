@@ -44,4 +44,13 @@ public final class RootCoreObjectProbe {
     public int getInvocationCount() {
         return invocationCount;
     }
+
+    public void blockForDiagnostics(String markerPath) throws Exception {
+        try (java.io.FileOutputStream marker =
+                     new java.io.FileOutputStream(markerPath)) {
+            marker.write("started".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            marker.getFD().sync();
+        }
+        Thread.sleep(30_000L);
+    }
 }
