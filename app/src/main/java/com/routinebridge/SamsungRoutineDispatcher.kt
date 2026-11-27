@@ -69,7 +69,10 @@ internal object SamsungRoutineDispatcher {
     }
 
     private fun drainQueue() {
-        var session: RootCoreSession? = null
+        val sessions = RootCoreSessionCache(
+            openSession = { context -> RootCoreAccess.open(context) },
+            closeSession = RootCoreAccess::close
+        )
         Log.i(TAG, "WORKER_CYCLE_START")
 
         try {
@@ -88,16 +91,9 @@ internal object SamsungRoutineDispatcher {
                 // during this active worker cycle.
                 if (processRoutine(
                     uuid = uuid,
-                    getSession = { context ->
-                        session ?: RootCoreAccess.open(context).also {
-                            session = it
-                        }
-                    },
+                    getSession = sessions::get,
                     invalidateSession = { failedSession ->
-                        if (session === failedSession) {
-                            RootCoreAccess.close(failedSession)
-                            session = null
-                        }
+                        sessions.invalidateIfUnusable(failedSession)
                     }
                 )) {
                     break
@@ -105,7 +101,7 @@ internal object SamsungRoutineDispatcher {
             }
         } finally {
             // Close Root Core only after the active queue cycle has finished.
-            session?.let(RootCoreAccess::close)
+            sessions.close()
             Log.i(TAG, "WORKER_CYCLE_STOPPED")
             notifyWorkerStopped()
         }
@@ -260,12 +256,7 @@ internal object SamsungRoutineDispatcher {
                 )
             }
         } catch (error: Exception) {
-            activeSession?.let { failedSession ->
-                RootCoreAccess.invalidateIfUnusable(
-                    failedSession,
-                    invalidateSession
-                )
-            }
+            activeSession?.let(invalidateSession)
 
             val failedRequestIds = coordinator.inFlightRequestIds()
             val failedRequestId = failedRequestIds.firstOrNull() ?: requestId

@@ -137,38 +137,41 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
-        addTestButton(tests, "DISPATCHER SESSION INVALIDATION") {
-            runTest("DISPATCHER SESSION INVALIDATION") {
+        addTestButton(tests, "DISPATCHER SESSION CACHE RECOVERY") {
+            runTest("DISPATCHER SESSION CACHE RECOVERY") {
                 val policy = RootCorePolicy.builder()
                     .allowClientCodeExecution()
                     .build()
-                val root = RootCore.open(applicationContext, policy, 15_000L)
-                var invalidationCount = 0
+
+                val cache = RootCoreSessionCache(
+                    openSession = { context ->
+                        RootCore.open(context, policy, 15_000L)
+                    },
+                    closeSession = { it.close() }
+                )
+
+                var first: RootCoreSession? = null
+                var replacement: RootCoreSession? = null
 
                 try {
-                    check(root.isConnected()) {
-                        "New RootCore session is not connected"
+                    val original = cache.get(applicationContext)
+                    first = original
+
+                    check(original.isConnected()) {
+                        "Initial session is not connected"
+                    }
+                    check(cache.get(applicationContext) === original) {
+                        "Cache did not reuse the initial session"
                     }
 
-                    val aliveResult = RootCoreAccess.invalidateIfUnusable(root) {
-                        invalidationCount++
-                    }
-
-                    check(!aliveResult) {
-                        "Live session was incorrectly invalidated"
-                    }
-                    check(invalidationCount == 0) {
-                        "Invalidation callback ran for a live session"
-                    }
-
-                    val id = root.createObject(
+                    val id = original.createObject(
                         "com.routinebridge.RootCoreObjectProbe",
                         emptyArray(),
                         Bundle()
                     )
 
                     val invocationError = try {
-                        root.invokeObject(
+                        original.invokeObject(
                             id,
                             "killRootProcessForDiagnostics",
                             emptyArray(),
@@ -180,39 +183,59 @@ class RootCoreDiagnosticsActivity : Activity() {
                     }
 
                     check(invocationError != null) {
-                        "Root process termination did not interrupt Binder invocation"
+                        "Root termination did not interrupt Binder invocation"
                     }
 
                     val deadline = SystemClock.elapsedRealtime() + 5_000L
-                    while (root.isConnected() &&
+                    while (original.isConnected() &&
                         SystemClock.elapsedRealtime() < deadline) {
                         Thread.sleep(50L)
                     }
 
-                    check(!root.isConnected()) {
-                        "Root Binder death was not detected"
+                    check(!original.isConnected()) {
+                        "Original Binder connection remained alive"
+                    }
+                    check(cache.invalidateIfUnusable(original)) {
+                        "Dead cached session was not invalidated"
                     }
 
-                    val deadResult = RootCoreAccess.invalidateIfUnusable(root) {
-                        invalidationCount++
+                    val fresh = cache.get(applicationContext)
+                    replacement = fresh
+
+                    check(fresh !== original) {
+                        "Cache returned the terminated session"
+                    }
+                    check(fresh.isConnected()) {
+                        "Replacement session is not connected"
+                    }
+                    check(fresh.ping() == 0) {
+                        "Replacement session did not confirm root UID"
+                    }
+                    check(cache.get(applicationContext) === fresh) {
+                        "Replacement session was not retained in cache"
                     }
 
-                    check(deadResult) {
-                        "Dead session was not marked for invalidation"
+                    check(!cache.invalidateIfUnusable(original)) {
+                        "Stale session invalidation affected the replacement"
                     }
-                    check(invalidationCount == 1) {
-                        "Expected exactly one invalidation callback, got $invalidationCount"
-                    }
-                    check(!RootCoreAccess.isUsable(root)) {
-                        "Invalidated session is still considered usable"
+                    check(cache.get(applicationContext) === fresh) {
+                        "Stale session invalidation removed the replacement"
                     }
 
-                    "Live session was preserved; callback was not invoked\n" +
-                        "Root process termination interrupted Binder call\n" +
-                        "Dead session was detected by the shared invalidation method\n" +
-                        "Invalidation callback invoked exactly once"
+                    "Initial session was reused from cache\\n" +
+                        "Root process termination interrupted Binder call\\n" +
+                        "Dead cached session was invalidated\\n" +
+                        "Next access opened a new connected root session (UID 0)\\n" +
+                        "New session was reused from cache\\n" +
+                        "Stale session could not invalidate the replacement"
                 } finally {
-                    root.close()
+                    cache.close()
+                    first?.let {
+                        runCatching { it.awaitTermination(5_000L) }
+                    }
+                    replacement?.let {
+                        runCatching { it.awaitTermination(5_000L) }
+                    }
                 }
             }
         }
