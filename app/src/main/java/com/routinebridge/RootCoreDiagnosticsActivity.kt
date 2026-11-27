@@ -240,6 +240,196 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+        addTestButton(tests, "DISPATCHER WORKER CYCLE RECOVERY") {
+            runTest("DISPATCHER WORKER CYCLE RECOVERY") {
+                val policy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+
+                val openedSessions = mutableListOf<RootCoreSession>()
+                val sessions = RootCoreSessionCache(
+                    openSession = { context ->
+                        val created = RootCore.open(
+                            context,
+                            policy,
+                            15_000L
+                        )
+                        openedSessions.add(created)
+                        created
+                    },
+                    closeSession = { it.close() }
+                )
+
+                val firstUuid = 910001L
+                val secondUuid = 910002L
+                val coordinator = RoutineWorkerCoordinator { }
+
+                coordinator.enqueue(
+                    routineUuid = firstUuid,
+                    transform = BooleanStateTransform.ENABLE,
+                    requestId = "diagnostic-first",
+                    onWorkerStopped = {}
+                )
+                coordinator.enqueue(
+                    routineUuid = secondUuid,
+                    transform = BooleanStateTransform.ENABLE,
+                    requestId = "diagnostic-second",
+                    onWorkerStopped = {}
+                )
+
+                var firstSession: RootCoreSession? = null
+                var secondSession: RootCoreSession? = null
+                var firstFailureHandled = false
+                var secondTaskCompleted = false
+                var queueStopped = false
+
+                try {
+                    RoutineWorkerCycle.run(
+                        coordinator = coordinator,
+                        processRoutine = { uuid ->
+                            val start = coordinator.beginNext(uuid)
+                                ?: error("Could not begin queued task $uuid")
+
+                            check(start.command.routineUuid == uuid) {
+                                "Worker started an unexpected task"
+                            }
+
+                            if (uuid == firstUuid) {
+                                val active = sessions.get(applicationContext)
+                                firstSession = active
+
+                                try {
+                                    val objectId = active.createObject(
+                                        "com.routinebridge.RootCoreObjectProbe",
+                                        emptyArray(),
+                                        Bundle()
+                                    )
+
+                                    active.invokeObject(
+                                        objectId,
+                                        "killRootProcessForDiagnostics",
+                                        emptyArray(),
+                                        Bundle()
+                                    )
+
+                                    error(
+                                        "Root process termination did not " +
+                                            "interrupt the Binder call"
+                                    )
+                                } catch (error: Exception) {
+                                    check(error is android.os.RemoteException) {
+                                        "Expected RemoteException, got " +
+                                            "${error.javaClass.simpleName}: " +
+                                            error.message
+                                    }
+
+                                    val deadline =
+                                        SystemClock.elapsedRealtime() + 5_000L
+                                    while (
+                                        active.isConnected() &&
+                                        SystemClock.elapsedRealtime() < deadline
+                                    ) {
+                                        Thread.sleep(50L)
+                                    }
+
+                                    check(!active.isConnected()) {
+                                        "Root Binder remained connected"
+                                    }
+
+                                    RoutineWorkerFailureHandler.handle(
+                                        activeSession = active,
+                                        invalidateSession = { failedSession ->
+                                            sessions.invalidateIfUnusable(failedSession)
+                                            Unit
+                                        }
+                                    ) {
+                                        coordinator.releaseAfterFailure(false)
+                                        firstFailureHandled = true
+                                    }
+
+                                    false
+                                }
+                            } else {
+                                check(uuid == secondUuid) {
+                                    "Unexpected task UUID: $uuid"
+                                }
+
+                                val replacement =
+                                    sessions.get(applicationContext)
+                                secondSession = replacement
+
+                                check(replacement !== firstSession) {
+                                    "Second task reused the dead session"
+                                }
+                                check(replacement.isConnected()) {
+                                    "Replacement session is not connected"
+                                }
+                                check(replacement.ping() == 0) {
+                                    "Replacement session did not confirm UID 0"
+                                }
+
+                                val target =
+                                    coordinator.setInFlightBaseline(false)
+                                check(target == true) {
+                                    "Second task did not produce ENABLE target"
+                                }
+                                check(
+                                    coordinator.advanceAfterSuccess(false, true)
+                                ) {
+                                    "Second task was not completed"
+                                }
+
+                                secondTaskCompleted = true
+                                false
+                            }
+                        },
+                        onQueueEmpty = {
+                            queueStopped = true
+                        }
+                    )
+
+                    check(firstFailureHandled) {
+                        "First task failure was not handled"
+                    }
+                    check(secondTaskCompleted) {
+                        "Second task did not complete"
+                    }
+                    check(queueStopped) {
+                        "Worker cycle did not reach the empty queue"
+                    }
+                    check(openedSessions.size == 2) {
+                        "Expected exactly two RootCore sessions, opened " +
+                            openedSessions.size
+                    }
+                    check(coordinator.isWorkerStopped()) {
+                        "Worker coordinator did not stop"
+                    }
+                    check(coordinator.pendingSnapshot().isEmpty()) {
+                        "Unexpected tasks remain pending"
+                    }
+
+                    sessions.close()
+                    openedSessions.forEach { opened ->
+                        check(opened.awaitTermination(5_000L)) {
+                            "Root process did not terminate"
+                        }
+                    }
+
+                    "First task lost its RootCore Binder connection\n" +
+                        "Shared failure handler invalidated the dead session\n" +
+                        "Second queued task opened a fresh RootCore session\n" +
+                        "Replacement session confirmed UID 0\n" +
+                        "Second task completed and worker cycle stopped\n" +
+                        "Both RootCore processes terminated"
+                } finally {
+                    sessions.close()
+                    openedSessions.forEach { opened ->
+                        runCatching { opened.awaitTermination(3_000L) }
+                    }
+                }
+            }
+        }
+
         addTestButton(tests, "CLIENT OBJECTS / ROOT EXECUTION") {
             runTest("CREATE / INVOKE / STATE / RELEASE") {
                 val path = "/data/system/packages.xml"

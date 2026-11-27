@@ -76,29 +76,22 @@ internal object SamsungRoutineDispatcher {
         Log.i(TAG, "WORKER_CYCLE_START")
 
         try {
-            while (true) {
-                val uuid = coordinator.nextPendingUuid()
-
-                if (uuid == null) {
-                    if (coordinator.stopIfNoPending()) {
-                        Log.i(TAG, "WORKER_QUEUE_EMPTY")
-                        break
-                    }
-                    continue
+            RoutineWorkerCycle.run(
+                coordinator = coordinator,
+                processRoutine = { uuid ->
+                    processRoutine(
+                        uuid = uuid,
+                        getSession = sessions::get,
+                        invalidateSession = { failedSession ->
+                                            sessions.invalidateIfUnusable(failedSession)
+                                            Unit
+                                        }
+                    )
+                },
+                onQueueEmpty = {
+                    Log.i(TAG, "WORKER_QUEUE_EMPTY")
                 }
-
-                // One RootCore session is shared by every operation handled
-                // during this active worker cycle.
-                if (processRoutine(
-                    uuid = uuid,
-                    getSession = sessions::get,
-                    invalidateSession = { failedSession ->
-                        sessions.invalidateIfUnusable(failedSession)
-                    }
-                )) {
-                    break
-                }
-            }
+            )
         } finally {
             // Close Root Core only after the active queue cycle has finished.
             sessions.close()
@@ -256,22 +249,28 @@ internal object SamsungRoutineDispatcher {
                 )
             }
         } catch (error: Exception) {
-            activeSession?.let(invalidateSession)
+            RoutineWorkerFailureHandler.handle(
+                activeSession = activeSession,
+                invalidateSession = invalidateSession
+            ) {
+                val failedRequestIds = coordinator.inFlightRequestIds()
+                val failedRequestId =
+                    failedRequestIds.firstOrNull() ?: requestId
+                val released =
+                    coordinator.releaseAfterFailure(confirmedAttempt)
 
-            val failedRequestIds = coordinator.inFlightRequestIds()
-            val failedRequestId = failedRequestIds.firstOrNull() ?: requestId
-            val released = coordinator.releaseAfterFailure(confirmedAttempt)
+                Log.e(
+                    TAG,
+                    "DISPATCH_FAILED request=$failedRequestId " +
+                        "related=${failedRequestIds.drop(1).joinToString(",")} " +
+                        "uuid=$uuid released=${released != null} " +
+                        "deferred=$confirmedAttempt error=${error.message}",
+                    error
+                )
 
-            Log.e(
-                TAG,
-                "DISPATCH_FAILED request=$failedRequestId " +
-                    "related=${failedRequestIds.drop(1).joinToString(",")} " +
-                    "uuid=$uuid released=${released != null} " +
-                    "deferred=$confirmedAttempt error=${error.message}",
-                error
-            )
+                showFailure(error)
+            }
 
-            showFailure(error)
             return confirmedAttempt
         }
     }
