@@ -83,6 +83,60 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+        addTestButton(tests, "BINDER DEATH / isConnected") {
+            runTest("BINDER DEATH / isConnected") {
+                val policy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+                val root = RootCore.open(applicationContext, policy, 15_000L)
+
+                try {
+                    check(root.isConnected()) {
+                        "New RootCore session is not connected"
+                    }
+
+                    val id = root.createObject(
+                        "com.routinebridge.RootCoreObjectProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
+
+                    val invocationError = try {
+                        root.invokeObject(
+                            id,
+                            "killRootProcessForDiagnostics",
+                            emptyArray(),
+                            Bundle()
+                        )
+                        null
+                    } catch (error: android.os.RemoteException) {
+                        error
+                    }
+
+                    check(invocationError != null) {
+                        "Root process termination did not interrupt Binder invocation"
+                    }
+
+                    val deadline = SystemClock.elapsedRealtime() + 5_000L
+                    while (root.isConnected() &&
+                        SystemClock.elapsedRealtime() < deadline) {
+                        Thread.sleep(50L)
+                    }
+
+                    check(!root.isConnected()) {
+                        "isConnected() remained true after root Binder death"
+                    }
+
+                    "Connected state was true before termination\n" +
+                        "Root process termination interrupted Binder call\n" +
+                        "DeathRecipient updated connection state\n" +
+                        "isConnected() returned false"
+                } finally {
+                    root.close()
+                }
+            }
+        }
+
         addTestButton(tests, "CLIENT OBJECTS / ROOT EXECUTION") {
             runTest("CREATE / INVOKE / STATE / RELEASE") {
                 val path = "/data/system/packages.xml"

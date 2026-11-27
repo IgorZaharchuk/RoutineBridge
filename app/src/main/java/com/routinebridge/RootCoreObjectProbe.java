@@ -45,6 +45,13 @@ public final class RootCoreObjectProbe {
         return invocationCount;
     }
 
+    public void killRootProcessForDiagnostics() {
+        if (Process.myUid() != 0) {
+            throw new SecurityException("Probe is not running as root");
+        }
+        Process.killProcess(Process.myPid());
+    }
+
     public void blockForDiagnostics(String markerPath) throws Exception {
         try (java.io.FileOutputStream marker =
                      new java.io.FileOutputStream(markerPath)) {
