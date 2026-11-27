@@ -240,6 +240,285 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+
+addTestButton(tests, "DISPATCHER REAL EXECUTOR RECOVERY") {
+    runTest("DISPATCHER REAL EXECUTOR RECOVERY") {
+        val policy = RootCorePolicy.builder()
+            .allowClientCodeExecution()
+            .allowProviderAuthority(
+                "com.samsung.android.app.routines.externalprovider"
+            )
+            // Намеренно НЕ разрешаем launchActivity.
+            .build()
+
+        val openedSessions = mutableListOf<RootCoreSession>()
+        val sessions = RootCoreSessionCache(
+            openSession = { context ->
+                RootCore.open(context, policy, 15_000L).also {
+                    openedSessions.add(it)
+                }
+            },
+            closeSession = { it.close() }
+        )
+
+        val repository = ManualRoutineRepository(applicationContext)
+        val executor = RoutineActionExecutor(
+            applicationContext,
+            repository
+        )
+        val coordinator = RoutineWorkerCoordinator { }
+
+        var firstSession: RootCoreSession? = null
+        var secondSession: RootCoreSession? = null
+        var firstFailureHandled = false
+        var sessionInvalidated = false
+        var secondTaskCompleted = false
+        var queueStopped = false
+
+        try {
+            // Сначала читаем настоящие данные Samsung Provider.
+            val initialSession = sessions.get(applicationContext)
+            val candidate = repository.load(initialSession)
+                .firstOrNull {
+                    it.isEnabled == true && it.isRunning != null
+                }
+                ?: error(
+                    "No enabled manual Routine with known running state"
+                )
+
+            // Преобразование должно оставить состояние неизменным.
+            // Если состояние изменится, политика RootCore всё равно
+            // запретит запуск Samsung Activity.
+            val safeTransform =
+                if (candidate.isRunning == true) {
+                    BooleanStateTransform.ENABLE
+                } else {
+                    BooleanStateTransform.DISABLE
+                }
+
+            val failedUuid = Long.MAX_VALUE
+            check(candidate.uuid != failedUuid) {
+                "Diagnostic UUID conflicts with selected Routine"
+            }
+
+            coordinator.enqueue(
+                routineUuid = failedUuid,
+                transform = BooleanStateTransform.ENABLE,
+                requestId = "diagnostic-dead-session",
+                onWorkerStopped = {}
+            )
+            coordinator.enqueue(
+                routineUuid = candidate.uuid,
+                transform = safeTransform,
+                requestId = "diagnostic-real-provider",
+                onWorkerStopped = {}
+            )
+
+            RoutineWorkerCycle.run(
+                coordinator = coordinator,
+                processRoutine = { uuid ->
+                    val start = coordinator.beginNext(uuid)
+                        ?: error("Could not begin queued task $uuid")
+
+                    check(start.command.routineUuid == uuid) {
+                        "Worker started an unexpected task"
+                    }
+
+                    val attempt = coordinator.currentAttempt()
+                        ?: error("No current worker attempt")
+
+                    if (uuid == failedUuid) {
+                        val active = sessions.get(applicationContext)
+                        firstSession = active
+
+                        val objectId = active.createObject(
+                            "com.routinebridge.RootCoreObjectProbe",
+                            emptyArray(),
+                            Bundle()
+                        )
+
+                        // Убиваем именно процесс первой сессии.
+                        // Сам вызов может завершиться DeadObjectException.
+                        runCatching {
+                            active.invokeObject(
+                                objectId,
+                                "killRootProcessForDiagnostics",
+                                emptyArray(),
+                                Bundle()
+                            )
+                        }
+
+                        val deadline =
+                            SystemClock.elapsedRealtime() + 5_000L
+
+                        while (
+                            active.isConnected() &&
+                            SystemClock.elapsedRealtime() < deadline
+                        ) {
+                            Thread.sleep(50L)
+                        }
+
+                        check(!active.isConnected()) {
+                            "First RootCore Binder remained connected"
+                        }
+
+                        // Теперь ошибку должен получить настоящий
+                        // RoutineActionExecutor на вызове ping().
+                        val executionError = try {
+                            executor.executeOnce(
+                                session = active,
+                                routineUuid = uuid,
+                                transform = attempt.transform,
+                                requestIds = attempt.requestIds,
+                                onStateRead = {
+                                    error(
+                                        "Executor reached Provider " +
+                                            "despite dead Binder"
+                                    )
+                                }
+                            )
+                            null
+                        } catch (error: Exception) {
+                            error
+                        }
+
+                        check(
+                            executionError is android.os.DeadObjectException
+                        ) {
+                            "Expected DeadObjectException from " +
+                                "RoutineActionExecutor.ping(), got " +
+                                (executionError?.javaClass?.simpleName
+                                    ?: "no exception")
+                        }
+
+                        RoutineWorkerFailureHandler.handle(
+                            activeSession = active,
+                            invalidateSession = { failedSession ->
+                                sessionInvalidated =
+                                    sessions.invalidateIfUnusable(
+                                        failedSession
+                                    )
+                            },
+                            onFailure = {
+                                val released =
+                                    coordinator.releaseAfterFailure(false)
+                                check(released != null) {
+                                    "Failed task was not released"
+                                }
+                                firstFailureHandled = true
+                            }
+                        )
+
+                        false
+                    } else {
+                        check(uuid == candidate.uuid) {
+                            "Unexpected second task UUID: $uuid"
+                        }
+
+                        val replacement =
+                            sessions.get(applicationContext)
+                        secondSession = replacement
+
+                        check(replacement !== firstSession) {
+                            "Second task reused the dead session"
+                        }
+                        check(replacement.isConnected()) {
+                            "Replacement RootCore session is disconnected"
+                        }
+                        check(replacement.ping() == 0) {
+                            "Replacement session did not confirm UID 0"
+                        }
+
+                        // Настоящий RoutineActionExecutor:
+                        // ping -> queryProvider -> вычисление target.
+                        val result = executor.executeOnce(
+                            session = replacement,
+                            routineUuid = candidate.uuid,
+                            transform = attempt.transform,
+                            requestIds = attempt.requestIds,
+                            onStateRead = { state ->
+                                check(
+                                    coordinator.setInFlightBaseline(state) != null
+                                ) {
+                                    "In-flight command disappeared"
+                                }
+                            }
+                        )
+
+                        check(
+                            result.status == RoutineExecutionStatus.SKIPPED
+                        ) {
+                            "Expected safe SKIPPED result, got ${result.status}"
+                        }
+                        check(result.actualState == candidate.isRunning) {
+                            "Routine state changed during diagnostic test"
+                        }
+                        check(
+                            coordinator.advanceAfterSuccess(
+                                result.initialState,
+                                result.actualState
+                                    ?: error("Provider state is unknown")
+                            )
+                        ) {
+                            "Second queued task was not completed"
+                        }
+
+                        secondTaskCompleted = true
+                        false
+                    }
+                },
+                onQueueEmpty = {
+                    queueStopped = true
+                }
+            )
+
+            check(firstFailureHandled) {
+                "Shared failure handler was not called"
+            }
+            check(sessionInvalidated) {
+                "Dead RootCore session was not invalidated"
+            }
+            check(secondTaskCompleted) {
+                "Second queued task did not complete"
+            }
+            check(queueStopped) {
+                "Worker did not reach an empty queue"
+            }
+            check(openedSessions.size == 2) {
+                "Expected exactly two RootCore sessions, opened " +
+                    openedSessions.size
+            }
+            check(coordinator.isWorkerStopped()) {
+                "Worker coordinator did not stop"
+            }
+            check(coordinator.pendingSnapshot().isEmpty()) {
+                "Unexpected pending commands remain"
+            }
+
+            sessions.close()
+
+            openedSessions.forEach { opened ->
+                check(opened.awaitTermination(5_000L)) {
+                    "RootCore process did not terminate"
+                }
+            }
+
+            "First queued task lost its RootCore Binder\n" +
+                "Real RoutineActionExecutor received DeadObjectException\n" +
+                "Shared failure handler invalidated the dead session\n" +
+                "Second task opened a fresh RootCore session (UID 0)\n" +
+                "Real Samsung Provider was read by RoutineActionExecutor\n" +
+                "Second task completed with SKIPPED; no Samsung launch allowed\n" +
+                "Worker stopped and both RootCore processes terminated"
+        } finally {
+            sessions.close()
+            openedSessions.forEach { opened ->
+                runCatching { opened.awaitTermination(3_000L) }
+            }
+        }
+    }
+}
+
         addTestButton(tests, "DISPATCHER WORKER CYCLE RECOVERY") {
             runTest("DISPATCHER WORKER CYCLE RECOVERY") {
                 val policy = RootCorePolicy.builder()
