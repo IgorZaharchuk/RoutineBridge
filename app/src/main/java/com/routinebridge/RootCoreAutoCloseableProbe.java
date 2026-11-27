@@ -8,6 +8,8 @@ public final class RootCoreAutoCloseableProbe implements AutoCloseable {
     private String markerPath;
     private long closeDelayMs;
     private boolean failClose;
+    private String invocationMarkerPath;
+    private long invocationDelayMs;
 
     public RootCoreAutoCloseableProbe() {
     }
@@ -16,6 +18,22 @@ public final class RootCoreAutoCloseableProbe implements AutoCloseable {
         this.markerPath = markerPath;
         this.closeDelayMs = closeDelayMs;
         this.failClose = failClose;
+    }
+
+    public void configureInvocation(String markerPath, long delayMs) {
+        this.invocationMarkerPath = markerPath;
+        this.invocationDelayMs = delayMs;
+    }
+
+    public String runInvocation() throws Exception {
+        appendTo(invocationMarkerPath, "started\\n");
+        Thread.sleep(invocationDelayMs);
+        appendTo(invocationMarkerPath, "finished\\n");
+        return "completed";
+    }
+
+    public boolean probe() {
+        return true;
     }
 
     @Override
@@ -34,11 +52,15 @@ public final class RootCoreAutoCloseableProbe implements AutoCloseable {
     }
 
     private void append(String value) throws IOException {
-        if (markerPath == null || markerPath.isEmpty()) {
-            throw new IOException("Close marker path was not configured");
+        appendTo(markerPath, value);
+    }
+
+    private void appendTo(String path, String value) throws IOException {
+        if (path == null || path.isEmpty()) {
+            throw new IOException("Marker path was not configured");
         }
 
-        try (FileOutputStream output = new FileOutputStream(markerPath, true)) {
+        try (FileOutputStream output = new FileOutputStream(path, true)) {
             output.write(value.getBytes(StandardCharsets.UTF_8));
             output.getFD().sync();
         }

@@ -661,6 +661,184 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+        addTestButton(tests, "RELEASE DURING INVOCATION") {
+            runTest("RELEASE DURING INVOCATION") {
+                val policy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+                val root = RootCore.open(applicationContext, policy, 15_000L)
+
+                val invocationMarker = java.io.File(
+                    cacheDir,
+                    "rootcore-release-invocation-${java.util.UUID.randomUUID()}.txt"
+                )
+                val closeMarker = java.io.File(
+                    cacheDir,
+                    "rootcore-release-close-${java.util.UUID.randomUUID()}.txt"
+                )
+
+                val executor = Executors.newFixedThreadPool(2)
+                var objectId: String? = null
+
+                try {
+                    val id = root.createObject(
+                        "com.routinebridge.RootCoreAutoCloseableProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
+                    objectId = id
+
+                    root.invokeObject(
+                        id,
+                        "configureClose",
+                        arrayOf("java.lang.String", "long", "boolean"),
+                        Bundle().apply {
+                            putString("arg0", closeMarker.absolutePath)
+                            putLong("arg1", 0L)
+                            putBoolean("arg2", false)
+                        }
+                    )
+
+                    root.invokeObject(
+                        id,
+                        "configureInvocation",
+                        arrayOf("java.lang.String", "long"),
+                        Bundle().apply {
+                            putString("arg0", invocationMarker.absolutePath)
+                            putLong("arg1", 3_500L)
+                        }
+                    )
+
+                    val invocationFuture = executor.submit<Bundle> {
+                        root.invokeObject(
+                            id,
+                            "runInvocation",
+                            emptyArray(),
+                            Bundle()
+                        )
+                    }
+
+                    val invocationDeadline =
+                        SystemClock.elapsedRealtime() + 5_000L
+
+                    while (
+                        (!invocationMarker.isFile ||
+                            !invocationMarker.readText().contains("started\n")) &&
+                        SystemClock.elapsedRealtime() < invocationDeadline
+                    ) {
+                        SystemClock.sleep(20L)
+                    }
+
+                    check(
+                        invocationMarker.isFile &&
+                            invocationMarker.readText().contains("started\n")
+                    ) {
+                        "Long-running invocation did not start"
+                    }
+
+                    val releaseFuture = executor.submit {
+                        root.releaseObject(id)
+                    }
+
+                    var newCallsRejected = false
+                    val rejectionDeadline =
+                        SystemClock.elapsedRealtime() + 5_000L
+
+                    while (
+                        !newCallsRejected &&
+                        SystemClock.elapsedRealtime() < rejectionDeadline
+                    ) {
+                        try {
+                            root.invokeObject(
+                                id,
+                                "probe",
+                                emptyArray(),
+                                Bundle()
+                            )
+                        } catch (_: android.os.RemoteException) {
+                            newCallsRejected = true
+                        }
+
+                        if (!newCallsRejected) SystemClock.sleep(25L)
+                    }
+
+                    check(newCallsRejected) {
+                        "Object continued accepting calls after release began"
+                    }
+                    check(!releaseFuture.isDone) {
+                        "releaseObject() returned before the active invocation finished"
+                    }
+                    check(!closeMarker.exists()) {
+                        "AutoCloseable.close() started before the active invocation finished"
+                    }
+
+                    val invocationResult = invocationFuture.get(
+                        8,
+                        java.util.concurrent.TimeUnit.SECONDS
+                    )
+                    check(
+                        invocationResult.getString("value_string") == "completed"
+                    ) {
+                        "Active invocation did not complete normally"
+                    }
+
+                    releaseFuture.get(
+                        8,
+                        java.util.concurrent.TimeUnit.SECONDS
+                    )
+
+                    check(invocationMarker.readText() == "started\nfinished\n") {
+                        "Invocation markers show an incomplete or repeated invocation"
+                    }
+                    check(closeMarker.readText() == "started\nclosed\n") {
+                        "AutoCloseable.close() did not run exactly after invocation"
+                    }
+
+                    val invokeAfterRelease = try {
+                        root.invokeObject(
+                            id,
+                            "probe",
+                            emptyArray(),
+                            Bundle()
+                        )
+                        false
+                    } catch (_: android.os.RemoteException) {
+                        true
+                    }
+
+                    val doubleReleaseRejected = try {
+                        root.releaseObject(id)
+                        false
+                    } catch (_: android.os.RemoteException) {
+                        true
+                    }
+
+                    check(invokeAfterRelease) {
+                        "Invocation after release was accepted"
+                    }
+                    check(doubleReleaseRejected) {
+                        "Second release was accepted"
+                    }
+
+                    objectId = null
+
+                    "Active invocation completed normally\n" +
+                        "New invocations were rejected while release was waiting\n" +
+                        "AutoCloseable.close() started only after invocation completion\n" +
+                        "Use-after-release and double release rejected"
+                } finally {
+                    objectId?.let {
+                        runCatching { root.releaseObject(it) }
+                    }
+                    executor.shutdownNow()
+                    root.close()
+                    runCatching { root.awaitTermination(5_000L) }
+                    invocationMarker.delete()
+                    closeMarker.delete()
+                }
+            }
+        }
+
         addTestButton(tests, "OBJECT CONCURRENCY") {
             runTest("OBJECT CONCURRENCY") {
                 val policy = RootCorePolicy.builder()
