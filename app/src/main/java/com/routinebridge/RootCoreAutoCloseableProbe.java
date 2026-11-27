@@ -26,9 +26,9 @@ public final class RootCoreAutoCloseableProbe implements AutoCloseable {
     }
 
     public String runInvocation() throws Exception {
-        appendTo(invocationMarkerPath, "started\\n");
+        appendTo(invocationMarkerPath, "started\n");
         Thread.sleep(invocationDelayMs);
-        appendTo(invocationMarkerPath, "finished\\n");
+        appendTo(invocationMarkerPath, "finished\n");
         return "completed";
     }
 
