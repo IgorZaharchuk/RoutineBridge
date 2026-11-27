@@ -83,6 +83,6 @@ tasks.configureEach {
 
 
 dependencies {
-    implementation(project(":root-core"))
+    implementation(files("libs/root-core-release.aar"))
     testImplementation("junit:junit:4.13.2")
 }

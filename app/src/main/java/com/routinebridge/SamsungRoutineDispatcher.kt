@@ -5,7 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
-import com.routinebridge.rootcore.RootCoreSession
+import com.rootcore.RootCoreSession
 import java.util.concurrent.Executors
 
 /**

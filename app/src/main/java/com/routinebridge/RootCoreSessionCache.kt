@@ -1,7 +1,7 @@
 package com.routinebridge
 
 import android.content.Context
-import com.routinebridge.rootcore.RootCoreSession
+import com.rootcore.RootCoreSession
 
 /**
  * Worker-thread-confined cache for the RootCore session.

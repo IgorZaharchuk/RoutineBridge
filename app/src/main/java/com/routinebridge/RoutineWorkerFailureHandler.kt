@@ -1,6 +1,6 @@
 package com.routinebridge
 
-import com.routinebridge.rootcore.RootCoreSession
+import com.rootcore.RootCoreSession
 
 /**
  * Shared failure ordering for production and diagnostic worker operations.

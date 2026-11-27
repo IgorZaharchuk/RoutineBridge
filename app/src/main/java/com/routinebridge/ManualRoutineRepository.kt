@@ -3,7 +3,7 @@ package com.routinebridge
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
-import com.routinebridge.rootcore.RootCoreSession
+import com.rootcore.RootCoreSession
 
 class ManualRoutineRepository(
     private val context: Context

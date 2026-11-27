@@ -3,9 +3,9 @@ package com.routinebridge
 import android.content.ComponentName
 import android.content.Context
 import android.util.Log
-import com.routinebridge.rootcore.RootCore
-import com.routinebridge.rootcore.RootCorePolicy
-import com.routinebridge.rootcore.RootCoreSession
+import com.rootcore.RootCore
+import com.rootcore.RootCorePolicy
+import com.rootcore.RootCoreSession
 
 internal class RootCoreAccessException(cause: Exception) : IllegalStateException(
     "Root Core недоступен: ${cause.message ?: cause.javaClass.simpleName}",

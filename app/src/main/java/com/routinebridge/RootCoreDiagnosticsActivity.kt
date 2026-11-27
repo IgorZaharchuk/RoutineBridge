@@ -15,9 +15,9 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import com.routinebridge.rootcore.RootCore
-import com.routinebridge.rootcore.RootCorePolicy
-import com.routinebridge.rootcore.RootCoreSession
+import com.rootcore.RootCore
+import com.rootcore.RootCorePolicy
+import com.rootcore.RootCoreSession
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

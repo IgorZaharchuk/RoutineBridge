@@ -6,7 +6,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
 
-import com.routinebridge.rootcore.RootCoreSession
+import com.rootcore.RootCoreSession
 
 internal enum class RoutineExecutionStatus {
     SUCCESS,
