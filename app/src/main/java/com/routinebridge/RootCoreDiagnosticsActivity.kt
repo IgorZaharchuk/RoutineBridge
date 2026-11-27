@@ -137,6 +137,86 @@ class RootCoreDiagnosticsActivity : Activity() {
             }
         }
 
+        addTestButton(tests, "DISPATCHER SESSION INVALIDATION") {
+            runTest("DISPATCHER SESSION INVALIDATION") {
+                val policy = RootCorePolicy.builder()
+                    .allowClientCodeExecution()
+                    .build()
+                val root = RootCore.open(applicationContext, policy, 15_000L)
+                var invalidationCount = 0
+
+                try {
+                    check(root.isConnected()) {
+                        "New RootCore session is not connected"
+                    }
+
+                    val aliveResult = RootCoreAccess.invalidateIfUnusable(root) {
+                        invalidationCount++
+                    }
+
+                    check(!aliveResult) {
+                        "Live session was incorrectly invalidated"
+                    }
+                    check(invalidationCount == 0) {
+                        "Invalidation callback ran for a live session"
+                    }
+
+                    val id = root.createObject(
+                        "com.routinebridge.RootCoreObjectProbe",
+                        emptyArray(),
+                        Bundle()
+                    )
+
+                    val invocationError = try {
+                        root.invokeObject(
+                            id,
+                            "killRootProcessForDiagnostics",
+                            emptyArray(),
+                            Bundle()
+                        )
+                        null
+                    } catch (error: android.os.RemoteException) {
+                        error
+                    }
+
+                    check(invocationError != null) {
+                        "Root process termination did not interrupt Binder invocation"
+                    }
+
+                    val deadline = SystemClock.elapsedRealtime() + 5_000L
+                    while (root.isConnected() &&
+                        SystemClock.elapsedRealtime() < deadline) {
+                        Thread.sleep(50L)
+                    }
+
+                    check(!root.isConnected()) {
+                        "Root Binder death was not detected"
+                    }
+
+                    val deadResult = RootCoreAccess.invalidateIfUnusable(root) {
+                        invalidationCount++
+                    }
+
+                    check(deadResult) {
+                        "Dead session was not marked for invalidation"
+                    }
+                    check(invalidationCount == 1) {
+                        "Expected exactly one invalidation callback, got $invalidationCount"
+                    }
+                    check(!RootCoreAccess.isUsable(root)) {
+                        "Invalidated session is still considered usable"
+                    }
+
+                    "Live session was preserved; callback was not invoked\n" +
+                        "Root process termination interrupted Binder call\n" +
+                        "Dead session was detected by the shared invalidation method\n" +
+                        "Invalidation callback invoked exactly once"
+                } finally {
+                    root.close()
+                }
+            }
+        }
+
         addTestButton(tests, "CLIENT OBJECTS / ROOT EXECUTION") {
             runTest("CREATE / INVOKE / STATE / RELEASE") {
                 val path = "/data/system/packages.xml"

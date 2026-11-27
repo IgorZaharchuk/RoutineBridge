@@ -56,6 +56,18 @@ internal object RootCoreAccess {
         }
     }
 
+    fun invalidateIfUnusable(
+        session: RootCoreSession,
+        onInvalidate: (RootCoreSession) -> Unit
+    ): Boolean {
+        if (isUsable(session)) {
+            return false
+        }
+
+        onInvalidate(session)
+        return true
+    }
+
     fun close(session: RootCoreSession) {
         try {
             val sessionId = session.sessionId.take(8)

@@ -261,9 +261,10 @@ internal object SamsungRoutineDispatcher {
             }
         } catch (error: Exception) {
             activeSession?.let { failedSession ->
-                if (!RootCoreAccess.isUsable(failedSession)) {
-                    invalidateSession(failedSession)
-                }
+                RootCoreAccess.invalidateIfUnusable(
+                    failedSession,
+                    invalidateSession
+                )
             }
 
             val failedRequestIds = coordinator.inFlightRequestIds()
