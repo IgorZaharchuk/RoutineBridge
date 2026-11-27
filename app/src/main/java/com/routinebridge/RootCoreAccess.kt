@@ -50,7 +50,7 @@ internal object RootCoreAccess {
 
     fun isUsable(session: RootCoreSession): Boolean {
         return try {
-            session.isRootProcessAlive() && session.ping() == 0
+            session.isConnected()
         } catch (_: Exception) {
             false
         }
