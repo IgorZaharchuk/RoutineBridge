@@ -726,6 +726,19 @@ class RootCoreDiagnosticsActivity : Activity() {
                             !invocationMarker.readText().contains("started\n")) &&
                         SystemClock.elapsedRealtime() < invocationDeadline
                     ) {
+                        if (invocationFuture.isDone) {
+                            try {
+                                val earlyResult = invocationFuture.get()
+                                throw IllegalStateException(
+                                    "runInvocation completed before writing its start marker: $earlyResult"
+                                )
+                            } catch (error: java.util.concurrent.ExecutionException) {
+                                throw IllegalStateException(
+                                    "runInvocation failed before writing its start marker: ${error.cause ?: error}",
+                                    error.cause ?: error
+                                )
+                            }
+                        }
                         SystemClock.sleep(20L)
                     }
 
@@ -733,7 +746,7 @@ class RootCoreDiagnosticsActivity : Activity() {
                         invocationMarker.isFile &&
                             invocationMarker.readText().contains("started\n")
                     ) {
-                        "Long-running invocation did not start"
+                        "Long-running invocation did not start; futureDone=${invocationFuture.isDone}"
                     }
 
                     val releaseFuture = executor.submit {
