@@ -36,6 +36,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.UUID;
 
 public final class RootCoreSession implements AutoCloseable {
@@ -48,6 +49,7 @@ public final class RootCoreSession implements AutoCloseable {
     private final IRootCoreManager remote;
     private final IBinder localToken;
     private final IBinder.DeathRecipient deathRecipient;
+    private final AtomicBoolean binderAlive;
 
     private volatile boolean closed;
     private final Object stateLock = new Object();
@@ -61,7 +63,8 @@ public final class RootCoreSession implements AutoCloseable {
             HandlerThread receiverThread,
             IRootCoreManager remote,
             IBinder localToken,
-            IBinder.DeathRecipient deathRecipient
+            IBinder.DeathRecipient deathRecipient,
+            AtomicBoolean binderAlive
     ) {
         this.context = context;
         this.rootProcess = rootProcess;
@@ -71,6 +74,7 @@ public final class RootCoreSession implements AutoCloseable {
         this.remote = remote;
         this.localToken = localToken;
         this.deathRecipient = deathRecipient;
+        this.binderAlive = binderAlive;
         this.binderExecutor = new ThreadPoolExecutor(BINDER_EXECUTOR_THREADS, BINDER_EXECUTOR_THREADS, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(BINDER_EXECUTOR_QUEUE_CAPACITY),
                 task -> {
                     Thread thread = new Thread(
@@ -106,6 +110,7 @@ public final class RootCoreSession implements AutoCloseable {
         AtomicReference<IBinder> tokenRef = new AtomicReference<>();
         AtomicReference<IBinder.DeathRecipient> deathRef = new AtomicReference<>();
         AtomicReference<Throwable> connectionError = new AtomicReference<>();
+        AtomicBoolean binderAlive = new AtomicBoolean(false);
 
         HandlerThread receiverThread = new HandlerThread(
                 "RootCoreReceiver-" + sessionId
@@ -183,6 +188,7 @@ public final class RootCoreSession implements AutoCloseable {
                     );
 
                     IBinder.DeathRecipient deathRecipient = () -> {
+                        binderAlive.set(false);
                         remoteRef.set(null);
                         connectionError.compareAndSet(
                                 null,
@@ -195,6 +201,7 @@ public final class RootCoreSession implements AutoCloseable {
                     tokenRef.set(token);
                     deathRef.set(deathRecipient);
 
+                    binderAlive.set(true);
                     binder.linkToDeath(deathRecipient, 0);
 
                     if (!binder.isBinderAlive()) {
@@ -205,6 +212,7 @@ public final class RootCoreSession implements AutoCloseable {
 
                     accepted = true;
                 } catch (Throwable broadcastError) {
+                    binderAlive.set(false);
                     remoteRef.set(null);
                     tokenRef.set(null);
                     deathRef.set(null);
@@ -279,7 +287,7 @@ public final class RootCoreSession implements AutoCloseable {
 
             return new RootCoreSession(
                     context, process, sessionId, receiver, receiverThread,
-                    manager, token, death
+                    manager, token, death, binderAlive
             );
         } catch (Throwable error) {
             try {
@@ -591,6 +599,17 @@ public final class RootCoreSession implements AutoCloseable {
 
     public boolean isRootProcessAlive() {
         return rootProcess.isAlive();
+    }
+
+    /**
+     * Returns whether this session is open and its remote Binder and root process are alive.
+     * This is a local state check; a subsequent Binder call can still fail if the process dies.
+     */
+    public boolean isConnected() {
+        return !closed
+                && binderAlive.get()
+                && remote.asBinder().isBinderAlive()
+                && rootProcess.isAlive();
     }
 
     public String getSessionId() {
