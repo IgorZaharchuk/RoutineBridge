@@ -66,19 +66,11 @@ internal object RootCoreAccess {
             )
 
             session.close()
-            val terminated = session.awaitTermination(2_000L)
 
             Log.i(
                 TAG,
-                "ROOT_SESSION_CLOSED session=$sessionId terminated=$terminated"
+                "ROOT_SESSION_CLOSE_REQUESTED session=$sessionId"
             )
-
-            if (!terminated) {
-                Log.w(TAG, "Root Core process did not terminate within 2 seconds")
-            }
-        } catch (error: InterruptedException) {
-            Thread.currentThread().interrupt()
-            Log.w(TAG, "Interrupted while waiting for Root Core termination", error)
         } catch (error: Exception) {
             Log.w(TAG, "Failed to close Root Core session", error)
         }
